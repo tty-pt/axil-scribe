@@ -165,18 +165,18 @@ Build and verify the standalone pure-C core with zero HTTP or UI coupling.
 
 Build a verifiable extraction pipeline before touching UI code.
 
-- [ ] **2.1 Pluggable extractor interface (`src/scribe_extract.c`)**
+- [x] **2.1 Pluggable extractor interface (`src/scribe_extract.c`)**
   - `scribe_extractor_ops_t` vtable with two built-in backends:
     - **`auren` backend:** calls `/v1/chat/completions` (`image_url` + deterministic schema-derived JSON prompt instructing verbatim transcription, `null` on illegible ink, separate `marginal_notes`, and multi-entry array output). Works unchanged for local offline GGUF and cloud upstreams.
     - **`mock` / replay backend:** deterministic JSON fixture backend for fast offline CI tests.
-- [ ] **2.2 Deterministic validation & 2-pass conflict routing (`src/scribe_validate.c`)**
+- [x] **2.2 Deterministic validation & 2-pass conflict routing (`src/scribe_validate.c`)**
   - Format & sanity rules: valid calendar dates, chronological checks (e.g., confirmation/wedding after birth/baptism when present), required field presence -> sets `SCRIBE_FLAG_INVALID`.
   - Optional **2-pass disagreement check**: run two models (or two prompt/temperature passes) and flag any field where outputs diverge (`SCRIBE_FLAG_CONFLICT`), routing the entry to `SCRIBE_STATUS_NEEDS_REVIEW`.
   - Non-destructive dictionary suggestions (known officiants, parishes, localities by era) surfaced as hints only — never auto-overwriting raw transcription.
-- [ ] **2.3 Synthetic fixture generator & accuracy benchmark (`tests/`)**
+- [x] **2.3 Synthetic fixture generator & accuracy benchmark (`tests/`)**
   - `tests/generate_synthetic_certs.py` generating synthetic certificates and multi-entry ledger pages (tilted, low-contrast, cursive/handwritten fonts, stamps, margin notes) with ground-truth JSON — zero real PII in the repository.
   - `bin/scribe-bench` measuring **field-level exact match rate** and **silent error rate** (wrong value without `ILLEGIBLE`/`CONFLICT`/`INVALID` flag) across candidate models.
-- [ ] **Verify Phase 2:**
+- [x] **Verify Phase 2:**
   - `tests/test_scribe_extract` passes with mock backend (including conflict detection and validation flags).
   - Live `bin/scribe-bench` run against synthetic fixtures produces a repeatable metrics table.
 

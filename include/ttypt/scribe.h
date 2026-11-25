@@ -236,6 +236,140 @@ int scribe_search(scribe_store_t *store,
 
 void scribe_id_list_free(scribe_id_list_t *list);
 
+/* ── Deterministic Validation & Advisory Dictionary ────────────── */
+
+/**
+ * @brief Validate ISO date ("YYYY", "YYYY-MM", or "YYYY-MM-DD") with
+ *        calendar/leap-year checks and archival year bounds [1500..2100].
+ * @return 0 if valid, -1 if invalid.
+ */
+int scribe_validate_date(const char *s, int *out_year,
+                         int *out_month, int *out_day);
+
+/**
+ * @brief Validate required fields, date syntax, and chronological invariants.
+ *
+ * Sets SCRIBE_FLAG_INVALID on failing fields without mutating raw/verified text.
+ * @return Number of fields bearing any review flag (ILLEGIBLE|CONFLICT|INVALID).
+ */
+size_t scribe_validate_entry(const scribe_template_t *tpl,
+                             scribe_entry_t *entry);
+
+typedef struct scribe_dict scribe_dict_t;
+
+typedef struct {
+	char canonical[128];
+	int year_from;
+	int year_to;
+	float score; /* 0.0 .. 1.0 similarity (1.0 = exact folded match) */
+} scribe_suggestion_t;
+
+scribe_dict_t *scribe_dict_open(void);
+void scribe_dict_close(scribe_dict_t *dict);
+int scribe_dict_add(scribe_dict_t *dict, const char *category,
+                    const char *canonical, int year_from, int year_to);
+int scribe_dict_load_tsv(scribe_dict_t *dict, const char *path);
+
+/**
+ * @brief Return up to @p max_out advisory suggestions ranked by similarity.
+ *        Purely read-only — never modifies entry values.
+ */
+size_t scribe_dict_suggest(const scribe_dict_t *dict,
+                           const char *category,
+                           const char *raw_value,
+                           int year,
+                           scribe_suggestion_t *out,
+                           size_t max_out);
+
+/* ── Pluggable VLM Extraction & 2-Pass Conflict Routing ────────── */
+
+typedef struct {
+	const char *name;
+	int (*extract_json)(void *ctx,
+	                    const uint8_t *image_bytes, size_t image_len,
+	                    const char *mime,
+	                    const scribe_template_t *tpl,
+	                    const char *model,
+	                    const char *prompt,
+	                    float temperature,
+	                    char **out_json);
+} scribe_extractor_ops_t;
+
+typedef struct {
+	const char *host;       /* default "127.0.0.1" */
+	uint16_t port;          /* default 4242 */
+	const char *endpoint;   /* default "/v1/chat/completions" */
+	int timeout_ms;         /* default 60000 */
+} scribe_auren_config_t;
+
+typedef struct {
+	const char *const *responses;
+	size_t response_count;
+	size_t call_index;
+} scribe_mock_extractor_t;
+
+const scribe_extractor_ops_t *scribe_extractor_auren(void);
+const scribe_extractor_ops_t *scribe_extractor_mock(void);
+
+char *scribe_base64_encode(const uint8_t *data, size_t len);
+int scribe_build_extraction_prompt(const scribe_template_t *tpl,
+                                   char **out_prompt);
+
+/**
+ * @brief Parse raw VLM JSON response (stripping optional markdown fences)
+ *        into 1..N scribe_entry_t records.
+ */
+int scribe_parse_extraction_json(const char *raw_response,
+                                 const scribe_template_t *tpl,
+                                 const char *page_id,
+                                 const char *model,
+                                 scribe_entry_t **out_entries,
+                                 size_t *out_count);
+
+/**
+ * @brief Compare two extraction passes and set SCRIBE_FLAG_CONFLICT wherever
+ *        Pass 1 and Pass 2 disagree.
+ * @return Number of conflicting fields detected.
+ */
+size_t scribe_merge_two_pass(scribe_entry_t *pass1, size_t count1,
+                             const scribe_entry_t *pass2, size_t count2);
+
+/**
+ * @brief Run 1-pass (model_secondary == NULL) or 2-pass extraction on a stored
+ *        page, validate, route status, and persist entries to @p store.
+ */
+int scribe_extract_page(scribe_store_t *store,
+                        const scribe_page_t *page,
+                        const scribe_template_t *tpl,
+                        const scribe_extractor_ops_t *ops,
+                        void *extractor_ctx,
+                        const char *model_primary,
+                        const char *model_secondary,
+                        scribe_entry_t **out_entries,
+                        size_t *out_count);
+
+/* ── Benchmark Scoring ─────────────────────────────────────────── */
+
+typedef struct {
+	size_t docs_total;
+	size_t entries_total;
+	size_t fields_total;
+	size_t exact_matches;
+	size_t flagged_fields;
+	size_t silent_errors;
+} scribe_bench_metrics_t;
+
+/**
+ * @brief Score extracted entries against ground-truth entries and accumulate
+ *        field-level exact match and silent error counts into @p metrics.
+ */
+void scribe_bench_score_entries(const scribe_template_t *tpl,
+                                const scribe_entry_t *predicted,
+                                size_t pred_count,
+                                const scribe_entry_t *truth,
+                                size_t truth_count,
+                                scribe_bench_metrics_t *metrics);
+
 #ifdef __cplusplus
 }
 #endif
