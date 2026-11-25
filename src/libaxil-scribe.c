@@ -578,6 +578,8 @@ ux_state_to_flat_json(const scribe_ux_state_t *st)
 		json_object_object_add(o, k, json_object_new_string(f->type));
 		snprintf(k, sizeof(k), "f%zu_hint", i);
 		json_object_object_add(o, k, json_object_new_string(f->format_hint));
+		snprintf(k, sizeof(k), "f%zu_enums", i);
+		json_object_object_add(o, k, json_object_new_string(f->enum_options));
 		snprintf(k, sizeof(k), "f%zu_req", i);
 		json_object_object_add(o, k, json_object_new_int(f->required ? 1 : 0));
 		snprintf(k, sizeof(k), "f%zu_raw", i);
@@ -1203,17 +1205,32 @@ handle_post_ingest(socket_t cfd, char *body)
 }
 
 static int
-extract_entry_year(const scribe_entry_t *e)
+extract_entry_year(const scribe_entry_t *e, const scribe_template_t *tpl)
 {
 	size_t i;
 
+	if (tpl) {
+		for (i = 0; i < tpl->field_count; i++) {
+			const scribe_field_val_t *fv;
+			const char *v;
+			int y = 0;
+			if (tpl->fields[i].type != SCRIBE_FIELD_DATE)
+				continue;
+			fv = scribe_entry_get_field(e, tpl->fields[i].key);
+			if (!fv)
+				continue;
+			v = fv->verified_value ? fv->verified_value : fv->raw_value;
+			if (v && scribe_validate_date_range(v, 0, 0, &y, NULL, NULL) == 0)
+				return y;
+		}
+	}
 	for (i = 0; i < e->field_count; i++) {
 		const char *v = e->fields[i].verified_value
 		                ? e->fields[i].verified_value
 		                : e->fields[i].raw_value;
 		int y = 0;
 		if (v && strstr(e->fields[i].key, "date") &&
-		    scribe_validate_date(v, &y, NULL, NULL) == 0)
+		    scribe_validate_date_range(v, 0, 0, &y, NULL, NULL) == 0)
 			return y;
 	}
 	return 0;
@@ -1275,7 +1292,7 @@ handle_get_entry(socket_t cfd, char *body)
 	if (e.transcript)
 		snprintf(st.transcript, sizeof(st.transcript), "%s", e.transcript);
 
-	year_hint = extract_entry_year(&e);
+	year_hint = extract_entry_year(&e, tpl);
 	if (tpl) {
 		for (i = 0; i < tpl->field_count && st.field_count < SCRIBE_UX_MAX_FIELDS; i++) {
 			const scribe_field_spec_t *spec = &tpl->fields[i];
@@ -1290,6 +1307,19 @@ handle_get_entry(socket_t cfd, char *body)
 			         scribe_field_type_str(spec->type));
 			if (spec->format_hint && spec->format_hint[0])
 				snprintf(uf->format_hint, sizeof(uf->format_hint), "%s", spec->format_hint);
+			if (spec->enum_count > 0 && spec->enum_values) {
+				size_t ei, pos = 0;
+				for (ei = 0; ei < spec->enum_count && pos + 2 < sizeof(uf->enum_options); ei++) {
+					if (!spec->enum_values[ei] || !spec->enum_values[ei][0])
+						continue;
+					pos += (size_t)snprintf(uf->enum_options + pos,
+					                        sizeof(uf->enum_options) - pos,
+					                        "%s%s", pos ? "|" : "",
+					                        spec->enum_values[ei]);
+					if (pos >= sizeof(uf->enum_options))
+						pos = sizeof(uf->enum_options) - 1;
+				}
+			}
 			uf->required = spec->required;
 			if (fv) {
 				if (fv->raw_value)
@@ -1863,7 +1893,7 @@ handle_get_export_csv(socket_t cfd, char *body)
 
 	/* CSV header */
 	sb_append(&csv, "entry_id,page_id,page_sha256,book_ref,page_num,"
-	                "template_id,status,reviewed_by,reviewed_at,marginal_notes");
+	                "template_id,status,reviewed_by,reviewed_at,marginal_notes,transcript");
 	for (k = 0; k < key_count; k++) {
 		sb_append(&csv, ",");
 		sb_append_csv(&csv, keys[k]);
@@ -1910,6 +1940,8 @@ handle_get_export_csv(socket_t cfd, char *body)
 		sb_append_csv(&csv, numbuf);
 		sb_append(&csv, ",");
 		sb_append_csv(&csv, json_object_object_get_ex(eo, "marginal_notes", &jv) ? json_object_get_string(jv) : "");
+		sb_append(&csv, ",");
+		sb_append_csv(&csv, json_object_object_get_ex(eo, "transcript", &jv) ? json_object_get_string(jv) : "");
 
 		for (k = 0; k < key_count; k++) {
 			const char *best = "";

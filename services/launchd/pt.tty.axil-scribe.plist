@@ -28,8 +28,8 @@
 	<dict>
 		<key>PATH</key>
 		<string>@PREFIX@/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
-		<key>SCRIBE_TEMPLATES_DIR</key>
-		<string>@PREFIX@/share/axil-scribe/templates</string>
+		<key>SCRIBE_PACK_DIR</key>
+		<string>@PREFIX@/share/axil-scribe/packs/generic</string>
 		<key>SCRIBE_WASM_PATH</key>
 		<string>@PREFIX@/share/axil-scribe/htdocs/scribe_ux.wasm</string>
 	</dict>

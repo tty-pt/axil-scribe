@@ -8,17 +8,30 @@ import {
   createScribeClient,
   getModulePath,
   getWasmPath,
+  getPacksDir,
+  getPackDir,
   getTemplatesDir,
   getIncludeDir,
   getPkgConfigPath,
 } from "../dist/index.js";
 
-test("asset helpers resolve native module, wasm, templates, headers, and pkg-config", () => {
+test("asset helpers resolve native module, wasm, packs, templates, headers, and pkg-config", () => {
   const modPath = getModulePath();
   assert.ok(modPath && modPath.endsWith("libaxil-scribe"), `expected libaxil-scribe path, got ${modPath}`);
 
   const wasmPath = getWasmPath();
   assert.ok(wasmPath && fs.existsSync(wasmPath), `expected scribe_ux.wasm, got ${wasmPath}`);
+
+  const packsDir = getPacksDir();
+  assert.ok(packsDir && fs.existsSync(path.join(packsDir, "generic", "pack.json")), `expected packs dir, got ${packsDir}`);
+
+  const genericPack = getPackDir("generic");
+  assert.ok(genericPack && fs.existsSync(path.join(genericPack, "templates", "invoice_starter.json")), `expected generic pack, got ${genericPack}`);
+
+  const ptPack = getPackDir("pt-archival-handwriting");
+  assert.ok(ptPack && fs.existsSync(path.join(ptPack, "pack.json")), `expected pt-archival-handwriting pack, got ${ptPack}`);
+
+  assert.equal(getPackDir("nonexistent-pack"), null);
 
   const tplDir = getTemplatesDir();
   assert.ok(tplDir && fs.existsSync(path.join(tplDir, "confirmation_starter.json")), `expected templates dir, got ${tplDir}`);
@@ -110,7 +123,11 @@ test("ScribeClient: end-to-end mocked HTTP protocol", async () => {
 
       if (req.method === "POST" && url.pathname === "/entries/ent-1/extract") {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, entries: [{ id: "ent-1", status: "extracted", fields: [] }] }));
+        res.end(JSON.stringify({
+          ok: true,
+          deep: url.searchParams.get("deep") === "1",
+          entries: [{ id: "ent-1", status: "extracted", fields: [] }],
+        }));
         return;
       }
 
@@ -180,6 +197,10 @@ test("ScribeClient: end-to-end mocked HTTP protocol", async () => {
 
     const extracted = await client.extractEntry("ent-1");
     assert.equal(extracted.entries[0].status, "extracted");
+    assert.equal(extracted.deep, false);
+
+    const deepExtracted = await client.extractEntry("ent-1", { deep: true });
+    assert.equal(deepExtracted.deep, true);
 
     const added = await client.addPageEntry("pg-1", { templateId: "confirmation_starter" });
     assert.equal(added.entry.id, "ent-2");

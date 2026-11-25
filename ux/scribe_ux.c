@@ -200,6 +200,8 @@ scribe_ux_state_from_json(scribe_ux_state_t *st, const char *json, size_t len)
 		bud_json_str_len(json, len, k, f->type, sizeof(f->type));
 		snprintf(k, sizeof(k), "f%d_hint", i);
 		bud_json_str_len(json, len, k, f->format_hint, sizeof(f->format_hint));
+		snprintf(k, sizeof(k), "f%d_enums", i);
+		bud_json_str_len(json, len, k, f->enum_options, sizeof(f->enum_options));
 		snprintf(k, sizeof(k), "f%d_req", i);
 		f->required = (uint8_t)(bud_json_int_len(json, len, k, 0) ? 1 : 0);
 		snprintf(k, sizeof(k), "f%d_raw", i);
@@ -803,6 +805,7 @@ render_entry_view(const scribe_ux_state_t *st)
 			if (display_val[0])
 				bud_append(input, bud_text(display_val));
 		} else {
+			char dl_id[96];
 			input = el_class("input", "scribe-input");
 			bud_set_attr_lit(input, "type", "text");
 			bud_set_attr_name_lit(input, "id", in_id);
@@ -812,8 +815,37 @@ render_entry_view(const scribe_ux_state_t *st)
 				bud_set_attr_name_lit(input, "placeholder", f->format_hint);
 			else if (strcmp(f->type, "date") == 0)
 				bud_set_attr_lit(input, "placeholder", "YYYY-MM-DD");
+			if (f->enum_options[0]) {
+				snprintf(dl_id, sizeof(dl_id), "enum_%s", f->key);
+				bud_set_attr_name_lit(input, "list", dl_id);
+			}
 		}
 		bud_append(row, input);
+		if (f->enum_options[0] && strcmp(f->type, "notes") != 0) {
+			bud_node *dl = bud_element_lit("datalist");
+			char dl_id[96];
+			const char *p = f->enum_options;
+			snprintf(dl_id, sizeof(dl_id), "enum_%s", f->key);
+			bud_set_attr_name_lit(dl, "id", dl_id);
+			while (*p) {
+				const char *sep = strchr(p, '|');
+				size_t len = sep ? (size_t)(sep - p) : strlen(p);
+				if (len > 0) {
+					char opt_val[64];
+					bud_node *opt = bud_element_lit("option");
+					if (len >= sizeof(opt_val))
+						len = sizeof(opt_val) - 1;
+					memcpy(opt_val, p, len);
+					opt_val[len] = '\0';
+					bud_set_attr_name_lit(opt, "value", opt_val);
+					bud_append(dl, opt);
+				}
+				if (!sep)
+					break;
+				p = sep + 1;
+			}
+			bud_append(row, dl);
+		}
 
 		bud_set_attr_lit(illeg_cb, "type", "checkbox");
 		bud_set_attr_name_lit(illeg_cb, "name", cb_name);
@@ -896,7 +928,7 @@ render_search_view(const scribe_ux_state_t *st)
 
 	bud_set_attr_lit(in_q, "type", "search");
 	bud_set_attr_lit(in_q, "name", "q");
-	bud_set_attr_lit(in_q, "placeholder", "Search names, places, dates (accent-sensitive by default)...");
+	bud_set_attr_lit(in_q, "placeholder", "Search fields, transcripts, notes (accent-sensitive by default)...");
 	if (st->search_query[0])
 		bud_set_attr_name_lit(in_q, "value", st->search_query);
 

@@ -91,7 +91,14 @@ test_entry_workbench_and_actions(void)
 	snprintf(st.fields[2].label, sizeof(st.fields[2].label), "Confirmation Date");
 	snprintf(st.fields[2].type, sizeof(st.fields[2].type), "date");
 	st.fields[2].flags = SCRIBE_UX_FLAG_INVALID;
-	st.field_count = 3;
+
+	snprintf(st.fields[3].key, sizeof(st.fields[3].key), "currency");
+	snprintf(st.fields[3].label, sizeof(st.fields[3].label), "Currency");
+	snprintf(st.fields[3].type, sizeof(st.fields[3].type), "enum");
+	snprintf(st.fields[3].enum_options, sizeof(st.fields[3].enum_options), "EUR|USD|GBP");
+	snprintf(st.fields[3].raw_value, sizeof(st.fields[3].raw_value), "EUR");
+	st.fields[3].flags = SCRIBE_UX_FLAG_NONE;
+	st.field_count = 4;
 	st.active_field = 1;
 
 	/* Test viewport and field navigation actions */
@@ -123,6 +130,10 @@ test_entry_workbench_and_actions(void)
 	assert(strstr(html, "Source Ref: Book-IV p.4") != NULL);
 	assert(strstr(html, "Notes / Corrections") != NULL);
 	assert(strstr(html, "placeholder=\"e.g. Maria Silva\"") != NULL);
+	assert(strstr(html, "list=\"enum_currency\"") != NULL);
+	assert(strstr(html, "<datalist id=\"enum_currency\">") != NULL);
+	assert(strstr(html, "<option value=\"EUR\"") != NULL);
+	assert(strstr(html, "<option value=\"USD\"") != NULL);
 	assert(strstr(html, "action=\"/pages/p000003/entries\"") != NULL);
 	assert(strstr(html, "src=\"/pages/p000003/image\"") != NULL);
 	assert(strstr(html, "filter: contrast(1.45)") != NULL);
@@ -176,10 +187,12 @@ test_json_hydration_and_search_view(void)
 		"\"transcript\":\"Linha 1 diplomática\",\"high_contrast\":1,"
 		"\"zoom_pct\":150,\"rotate_deg\":90,\"field_count\":2,"
 		"\"f0_key\":\"subject\",\"f0_label\":\"Subject\",\"f0_type\":\"person\","
-		"\"f0_hint\":\"Full name\",\"f0_req\":1,\"f0_raw\":\"António\",\"f0_alt\":\"Antonio\",\"f0_ver\":\"\",\"f0_flags\":2,"
+		"\"f0_hint\":\"Full name\",\"f0_enums\":\"\","
+		"\"f0_req\":1,\"f0_raw\":\"António\",\"f0_alt\":\"Antonio\",\"f0_ver\":\"\",\"f0_flags\":2,"
 		"\"f0_bx\":100,\"f0_by\":200,\"f0_bw\":300,\"f0_bh\":50,"
-		"\"f1_key\":\"date\",\"f1_label\":\"Date\",\"f1_type\":\"date\","
-		"\"f1_req\":0,\"f1_raw\":\"1950-05-01\",\"f1_ver\":\"1950-05-01\",\"f1_flags\":0}";
+		"\"f1_key\":\"currency\",\"f1_label\":\"Currency\",\"f1_type\":\"enum\","
+		"\"f1_enums\":\"EUR|USD|GBP\","
+		"\"f1_req\":0,\"f1_raw\":\"EUR\",\"f1_ver\":\"EUR\",\"f1_flags\":0}";
 	scribe_ux_state_t st;
 	bud_node *root;
 	char *html;
@@ -199,6 +212,7 @@ test_json_hydration_and_search_view(void)
 	assert(strcmp(st.fields[0].raw_value, "António") == 0);
 	assert(strcmp(st.fields[0].alt_value, "Antonio") == 0);
 	assert(st.fields[0].flags == SCRIBE_UX_FLAG_CONFLICT);
+	assert(strcmp(st.fields[1].enum_options, "EUR|USD|GBP") == 0);
 	assert(st.active_field == 0);
 
 	/* Switch to search view and render */
@@ -210,6 +224,7 @@ test_json_hydration_and_search_view(void)
 	html = bud_render_html(root);
 	assert(html != NULL);
 	assert(strstr(html, "action=\"/search\"") != NULL);
+	assert(strstr(html, "Search fields, transcripts, notes") != NULL);
 	assert(strstr(html, "value=\"António\"") != NULL);
 	assert(strstr(html, "checked") != NULL);
 

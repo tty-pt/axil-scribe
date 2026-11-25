@@ -12,7 +12,7 @@ $ScribeDll = Join-Path $Prefix "bin\libaxil-scribe.dll"
 
 if ($AsService) {
     Write-Host "Registering axil-scribe Windows Service..."
-    New-Service -Name "axil-scribe" -BinaryPathName "`"$AxilBin`" -A -d -p 8095 -m `"$ScribeDll`"" -DisplayName "Axil Scribe Archival OCR Server" -StartupType Automatic
+    New-Service -Name "axil-scribe" -BinaryPathName "`"$AxilBin`" -A -d -B 33554432 -p 8095 -m `"$ScribeDll`"" -DisplayName "Axil Scribe Document OCR Server" -StartupType Automatic
     Start-Service -Name "axil-scribe"
 } else {
     Write-Host "Registering axil-scribe Scheduled Task at logon..."

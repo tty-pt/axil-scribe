@@ -3,7 +3,7 @@
 # $OpenBSD: axil_scribe,v 1.0 2026/11/25 $
 
 daemon="@PREFIX@/bin/axil"
-daemon_flags="-A -d -p 8095 -m @PREFIX@/lib/libaxil-scribe.so"
+daemon_flags="-A -d -B 33554432 -p 8095 -m @PREFIX@/lib/libaxil-scribe.so"
 
 . /etc/rc.d/rc.subr
 

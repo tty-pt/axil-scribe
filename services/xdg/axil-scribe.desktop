@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
 Name=Axil Scribe
-Comment=Axil Scribe Archival OCR & HITL Verification Server
-Exec=@PREFIX@/bin/axil -A -p 8095 -m @PREFIX@/lib/libaxil-scribe.so
+Comment=Axil Scribe Document OCR & HITL Verification Server
+Exec=env SCRIBE_PACK_DIR=@PREFIX@/share/axil-scribe/packs/generic SCRIBE_WASM_PATH=@PREFIX@/share/axil-scribe/htdocs/scribe_ux.wasm @PREFIX@/bin/axil -A -B 33554432 -p 8095 -m @PREFIX@/lib/libaxil-scribe.so
 Terminal=false
 Categories=Office;Utility;
 X-GNOME-Autostart-enabled=true

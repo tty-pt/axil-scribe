@@ -7,6 +7,7 @@ export interface ScribeClientOptions {
 export interface ScribeFieldValue {
   key: string;
   raw_value: string | null;
+  alt_value?: string | null;
   verified_value: string | null;
   flags: number;
   bbox?: [number, number, number, number];
@@ -28,6 +29,7 @@ export interface ScribeEntry {
   reviewed_by: string;
   reviewed_at: number;
   marginal_notes: string | null;
+  transcript?: string | null;
   book_ref?: string;
   page_num?: number;
   fields: ScribeFieldValue[];
@@ -67,6 +69,10 @@ export interface ScribeSearchOptions {
   folded?: boolean;
 }
 
+export interface ScribeExtractOptions {
+  deep?: boolean;
+}
+
 export class ScribeClient {
   baseUrl: string;
   timeoutMs: number;
@@ -80,7 +86,7 @@ export class ScribeClient {
   ): Promise<{ ok: boolean; deduped: boolean; pages: ScribePageSummary[]; entries: ScribeEntry[] }>;
   getEntry(entryId: string): Promise<{ ok: boolean; entry: ScribeEntry }>;
   verifyEntry(entryId: string, payload?: ScribeVerifyPayload): Promise<{ ok: boolean; entry: ScribeEntry }>;
-  extractEntry(entryId: string): Promise<{ ok: boolean; entries: ScribeEntry[] }>;
+  extractEntry(entryId: string, options?: ScribeExtractOptions): Promise<{ ok: boolean; entries: ScribeEntry[] }>;
   addPageEntry(
     pageId: string,
     options?: { templateId?: string; template_id?: string }
@@ -98,6 +104,8 @@ export class ScribeClient {
 export function createScribeClient(options?: ScribeClientOptions): ScribeClient;
 export function getModulePath(): string | null;
 export function getWasmPath(): string | null;
+export function getPacksDir(): string | null;
+export function getPackDir(packName: string): string | null;
 export function getTemplatesDir(): string | null;
 export function getIncludeDir(): string | null;
 export function getPkgConfigPath(): string | null;

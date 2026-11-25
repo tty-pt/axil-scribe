@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Axil Scribe Archival OCR &amp; HITL Verification Server (:8095)</Description>
+    <Description>Axil Scribe Document OCR &amp; HITL Verification Server (:8095)</Description>
     <URI>\Axil\axil-scribe</URI>
   </RegistrationInfo>
   <Triggers>
@@ -41,7 +41,7 @@
   <Actions Context="Author">
     <Exec>
       <Command>@PREFIX@\bin\axil.exe</Command>
-      <Arguments>-A -d -p 8095 -m @PREFIX@\bin\libaxil-scribe.dll</Arguments>
+      <Arguments>-A -d -B 33554432 -p 8095 -m @PREFIX@\bin\libaxil-scribe.dll</Arguments>
     </Exec>
   </Actions>
 </Task>

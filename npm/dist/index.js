@@ -153,17 +153,21 @@ export class ScribeClient {
 
   /**
    * Trigger extraction / re-extraction for an entry's page.
+   * Pass { deep: true } to force high-accuracy escalation mode (?deep=1).
    */
-  async extractEntry(entryId) {
+  async extractEntry(entryId, options = {}) {
+    const qs = buildQuery({
+      deep: options.deep ? 1 : undefined,
+    });
     return this._request(
-      `/entries/${encodeURIComponent(entryId)}/extract`,
+      `/entries/${encodeURIComponent(entryId)}/extract${qs}`,
       { method: "POST" },
       true
     );
   }
 
   /**
-   * Add a new entry on an existing page (1 page -> N entries for bound registers).
+   * Add a new entry on an existing page (1 page -> N entries for multi-record scans).
    */
   async addPageEntry(pageId, options = {}) {
     const qs = buildQuery({
@@ -276,7 +280,39 @@ export function getWasmPath() {
 }
 
 /**
- * Resolve the directory containing starter template JSON files.
+ * Resolve the directory containing declarative domain packs (`generic`, `pt-archival-handwriting`, etc.).
+ */
+export function getPacksDir() {
+  const nb = getNodeBuiltins();
+  if (!nb) return null;
+  const { fs, path, pkgRoot } = nb;
+  const candidates = [
+    path.join(pkgRoot, "packs"),
+    path.resolve(pkgRoot, "..", "packs"),
+  ];
+  for (const d of candidates) {
+    if (fs.existsSync(d)) return d;
+  }
+  return null;
+}
+
+/**
+ * Resolve the directory for a specific named domain pack (e.g. "generic", "pt-archival-handwriting").
+ * Returns null if the pack or its `pack.json` does not exist.
+ */
+export function getPackDir(packName) {
+  const nb = getNodeBuiltins();
+  if (!nb || !packName) return null;
+  const { fs, path } = nb;
+  const packsDir = getPacksDir();
+  if (!packsDir) return null;
+  const cand = path.join(packsDir, packName);
+  if (fs.existsSync(path.join(cand, "pack.json"))) return cand;
+  return null;
+}
+
+/**
+ * Resolve the directory containing legacy starter template JSON files.
  */
 export function getTemplatesDir() {
   const nb = getNodeBuiltins();

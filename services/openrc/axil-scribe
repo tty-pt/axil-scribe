@@ -2,12 +2,17 @@
 # OpenRC service script for axil-scribe
 
 name="axil-scribe"
-description="Axil Scribe Archival OCR & HITL Verification Server"
+description="Axil Scribe Document OCR & HITL Verification Server"
 
 command="@PREFIX@/bin/axil"
 command_args="-A -d -B 33554432 -p 8095 -m @PREFIX@/lib/libaxil-scribe.so"
 command_background=true
 pidfile="/run/${RC_SVCNAME}.pid"
+
+start_pre() {
+	export SCRIBE_PACK_DIR="${SCRIBE_PACK_DIR:-@PREFIX@/share/axil-scribe/packs/generic}"
+	export SCRIBE_WASM_PATH="${SCRIBE_WASM_PATH:-@PREFIX@/share/axil-scribe/htdocs/scribe_ux.wasm}"
+}
 
 depend() {
 	need net

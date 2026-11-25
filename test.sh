@@ -239,6 +239,7 @@ echo "PASS: liblemma search preserves accent sensitivity by default and matches 
 echo "--- 8. Testing /export.csv, /export.json, and /entries/$ENTRY_ID/transcript ---"
 CSV_OUT=$(curl -fsS "$BASE/export.csv?status=verified")
 echo "$CSV_OUT" | grep -q "entry_id,page_id,page_sha256"
+echo "$CSV_OUT" | grep -q "marginal_notes,transcript"
 echo "$CSV_OUT" | grep -q "João Pereira"
 echo "$CSV_OUT" | grep -q "Joao Pereyra"
 
@@ -279,7 +280,22 @@ GEN_HTML=$(curl -fsS "http://127.0.0.1:$GEN_PORT/")
 echo "$GEN_HTML" | grep -q 'Generic Document Pack'
 echo "$GEN_HTML" | grep -q 'invoice_starter'
 echo "$GEN_HTML" | grep -q 'Source Ref'
+
+# Ingest an invoice in manual mode (extract=0) and verify enum <datalist> renders
+INV_JSON=$(curl -fsS -H "Accept: application/json" \
+	-F "file=@$SAMPLE_PNG;type=image/png" \
+	-F "template_id=invoice_starter" \
+	-F "book_ref=INV-2026" \
+	-F "page_num=1" \
+	-F "extract=0" \
+	"http://127.0.0.1:$GEN_PORT/ingest")
+INV_ID=$(echo "$INV_JSON" | python3 -c 'import sys,json; d=json.load(sys.stdin); assert d["ok"]; print(d["entries"][0]["id"])')
+INV_HTML=$(curl -fsS "http://127.0.0.1:$GEN_PORT/entries/$INV_ID")
+echo "$INV_HTML" | grep -q 'list="enum_currency"'
+echo "$INV_HTML" | grep -q '<datalist id="enum_currency">'
+echo "$INV_HTML" | grep -q 'value="EUR"'
+echo "$INV_HTML" | grep -q 'Deep Re-Extract'
 rm -rf "$GEN_DATA_DIR"
-echo "PASS: Generic pack served invoice_starter and generic UI vocabulary."
+echo "PASS: Generic pack served invoice_starter, enum datalist, and generic UI vocabulary."
 
 echo "=== ALL AXIL-SCRIBE E2E TESTS PASSED ==="

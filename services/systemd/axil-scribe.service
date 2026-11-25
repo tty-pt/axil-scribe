@@ -1,12 +1,12 @@
 [Unit]
-Description=Axil Scribe Archival OCR & HITL Verification Server (:8095)
+Description=Axil Scribe Document OCR & HITL Verification Server (:8095)
 After=network.target
 
 [Service]
 Type=simple
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=SCRIBE_DATA_DIR=%h/.local/share/axil-scribe/data
-Environment=SCRIBE_TEMPLATES_DIR=@PREFIX@/share/axil-scribe/templates
+Environment=SCRIBE_PACK_DIR=@PREFIX@/share/axil-scribe/packs/generic
 Environment=SCRIBE_WASM_PATH=@PREFIX@/share/axil-scribe/htdocs/scribe_ux.wasm
 ExecStart=@PREFIX@/bin/axil -A -d -B 33554432 -p 8095 -m @PREFIX@/lib/libaxil-scribe
 Restart=always

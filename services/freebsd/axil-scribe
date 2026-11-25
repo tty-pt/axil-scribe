@@ -16,9 +16,12 @@ name="axil_scribe"
 rcvar="axil_scribe_enable"
 
 command="@PREFIX@/bin/axil"
-command_args="-A -d -p 8095 -m @PREFIX@/lib/libaxil-scribe.so"
+command_args="-A -d -B 33554432 -p 8095 -m @PREFIX@/lib/libaxil-scribe.so"
 
 load_rc_config $name
 : ${axil_scribe_enable:="NO"}
+: ${axil_scribe_pack_dir:="@PREFIX@/share/axil-scribe/packs/generic"}
+export SCRIBE_PACK_DIR="${SCRIBE_PACK_DIR:-${axil_scribe_pack_dir}}"
+export SCRIBE_WASM_PATH="${SCRIBE_WASM_PATH:-@PREFIX@/share/axil-scribe/htdocs/scribe_ux.wasm}"
 
 run_rc_command "$1"

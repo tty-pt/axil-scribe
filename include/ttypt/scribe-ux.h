@@ -73,6 +73,7 @@ typedef struct {
 	char label[96];
 	char type[16];
 	char format_hint[64];
+	char enum_options[256]; /* pipe-delimited allowed values for enum fields */
 	uint8_t required;
 	char raw_value[256];
 	char alt_value[256];
