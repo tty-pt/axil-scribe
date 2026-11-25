@@ -1,0 +1,14 @@
+*.o
+*.d
+*.so
+*.a
+*.wasm
+/lib
+/bin
+/man
+/usr
+/stage
+/var
+/uploads
+/tests/test_runner
+!services/rc.d/
