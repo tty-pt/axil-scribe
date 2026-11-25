@@ -156,6 +156,10 @@ static char *entry_to_json(const scribe_entry_t *e)
 		json_object_object_add(obj, "marginal_notes", json_object_new_string(e->marginal_notes));
 	else
 		json_object_object_add(obj, "marginal_notes", NULL);
+	if (e->transcript)
+		json_object_object_add(obj, "transcript", json_object_new_string(e->transcript));
+	else
+		json_object_object_add(obj, "transcript", NULL);
 
 	struct json_object *arr = json_object_new_array();
 	for (size_t i = 0; i < e->field_count; i++) {
@@ -164,6 +168,8 @@ static char *entry_to_json(const scribe_entry_t *e)
 		json_object_object_add(fo, "key", json_object_new_string(f->key));
 		json_object_object_add(fo, "raw_value",
 			f->raw_value ? json_object_new_string(f->raw_value) : NULL);
+		if (f->alt_value)
+			json_object_object_add(fo, "alt_value", json_object_new_string(f->alt_value));
 		json_object_object_add(fo, "verified_value",
 			f->verified_value ? json_object_new_string(f->verified_value) : NULL);
 		json_object_object_add(fo, "flags", json_object_new_int64((int64_t)f->flags));
@@ -210,23 +216,28 @@ static int entry_from_json(const char *js, scribe_entry_t *e)
 		e->reviewed_at = json_object_get_int64(v);
 	if (json_object_object_get_ex(obj, "marginal_notes", &v) && json_object_is_type(v, json_type_string))
 		(void)scribe_entry_set_marginal_notes(e, json_object_get_string(v));
+	if (json_object_object_get_ex(obj, "transcript", &v) && json_object_is_type(v, json_type_string))
+		(void)scribe_entry_set_transcript(e, json_object_get_string(v));
 
 	if (json_object_object_get_ex(obj, "fields", &v) && json_object_is_type(v, json_type_array)) {
 		size_t nf = json_object_array_length(v);
 		for (size_t i = 0; i < nf; i++) {
 			struct json_object *fo = json_object_array_get_idx(v, i);
-			struct json_object *jk = NULL, *jr = NULL, *jv = NULL, *jfl = NULL, *jbb = NULL;
+			struct json_object *jk = NULL, *jr = NULL, *ja = NULL, *jv = NULL, *jfl = NULL, *jbb = NULL;
 			if (!fo || !json_object_object_get_ex(fo, "key", &jk) ||
 			    !json_object_is_type(jk, json_type_string))
 				continue;
 
-			const char *raw = NULL, *ver = NULL;
+			const char *raw = NULL, *alt = NULL, *ver = NULL;
 			uint32_t flags = 0;
 			float bbox[4] = { 0, 0, 0, 0 };
 
 			if (json_object_object_get_ex(fo, "raw_value", &jr) &&
 			    jr && json_object_is_type(jr, json_type_string))
 				raw = json_object_get_string(jr);
+			if (json_object_object_get_ex(fo, "alt_value", &ja) &&
+			    ja && json_object_is_type(ja, json_type_string))
+				alt = json_object_get_string(ja);
 			if (json_object_object_get_ex(fo, "verified_value", &jv) &&
 			    jv && json_object_is_type(jv, json_type_string))
 				ver = json_object_get_string(jv);
@@ -240,8 +251,13 @@ static int entry_from_json(const char *js, scribe_entry_t *e)
 						json_object_array_get_idx(jbb, k));
 			}
 
-			if (scribe_entry_set_field(e, json_object_get_string(jk),
-			                           raw, ver, flags, bbox) != 0) {
+			const char *key = json_object_get_string(jk);
+			if (scribe_entry_set_field(e, key, raw, ver, flags, bbox) != 0) {
+				scribe_entry_free(e);
+				json_object_put(obj);
+				return -1;
+			}
+			if (alt && scribe_entry_set_field_alt(e, key, alt) != 0) {
 				scribe_entry_free(e);
 				json_object_put(obj);
 				return -1;
@@ -286,6 +302,8 @@ static void unindex_entry(scribe_store_t *store, const scribe_entry_t *e)
 	(void)lemma_unindex(store->lemma, "ascii:all", e->id);
 	(void)lemma_unindex(store->lemma, "marginal_notes", e->id);
 	(void)lemma_unindex(store->lemma, "ascii:marginal_notes", e->id);
+	(void)lemma_unindex(store->lemma, "transcript", e->id);
+	(void)lemma_unindex(store->lemma, "ascii:transcript", e->id);
 	(void)lemma_unindex(store->lemma, "book_ref", e->id);
 	(void)lemma_unindex(store->lemma, "ascii:book_ref", e->id);
 
@@ -314,6 +332,9 @@ static void index_entry(scribe_store_t *store, const scribe_entry_t *e)
 
 	if (e->marginal_notes && e->marginal_notes[0])
 		index_text_pair(store->lemma, "marginal_notes", e->id, e->marginal_notes);
+
+	if (e->transcript && e->transcript[0])
+		index_text_pair(store->lemma, "transcript", e->id, e->transcript);
 
 	if (e->page_id[0]) {
 		scribe_page_t pg;
@@ -490,8 +511,10 @@ void scribe_entry_free(scribe_entry_t *entry)
 	if (!entry)
 		return;
 	free(entry->marginal_notes);
+	free(entry->transcript);
 	for (size_t i = 0; i < entry->field_count; i++) {
 		free(entry->fields[i].raw_value);
+		free(entry->fields[i].alt_value);
 		free(entry->fields[i].verified_value);
 	}
 	free(entry->fields);
@@ -507,6 +530,18 @@ int scribe_entry_set_marginal_notes(scribe_entry_t *entry, const char *notes)
 		return -1;
 	free(entry->marginal_notes);
 	entry->marginal_notes = copy;
+	return 0;
+}
+
+int scribe_entry_set_transcript(scribe_entry_t *entry, const char *transcript)
+{
+	if (!entry)
+		return -1;
+	char *copy = transcript ? dup_str(transcript) : NULL;
+	if (transcript && !copy)
+		return -1;
+	free(entry->transcript);
+	entry->transcript = copy;
 	return 0;
 }
 
@@ -561,6 +596,26 @@ int scribe_entry_set_field(scribe_entry_t *entry,
 	else
 		memset(slot->bbox, 0, sizeof(slot->bbox));
 	return 0;
+}
+
+int scribe_entry_set_field_alt(scribe_entry_t *entry,
+                               const char *key,
+                               const char *alt_value)
+{
+	if (!entry || !key || !key[0])
+		return -1;
+
+	for (size_t i = 0; i < entry->field_count; i++) {
+		if (strcmp(entry->fields[i].key, key) == 0) {
+			char *copy = (alt_value && alt_value[0]) ? dup_str(alt_value) : NULL;
+			if (alt_value && alt_value[0] && !copy)
+				return -1;
+			free(entry->fields[i].alt_value);
+			entry->fields[i].alt_value = copy;
+			return 0;
+		}
+	}
+	return -1;
 }
 
 const scribe_field_val_t *scribe_entry_get_field(const scribe_entry_t *entry,

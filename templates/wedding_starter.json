@@ -13,5 +13,8 @@
     { "key": "witnesses", "label": "Witnesses", "type": "person", "required": false },
     { "key": "officiant", "label": "Officiant / Priest", "type": "person", "required": false },
     { "key": "book_page_entry", "label": "Book / Page / Entry Ref", "type": "text", "required": false }
+  ],
+  "constraints": [
+    { "op": "date_range", "lhs": "marriage_date", "min": 1500, "max": 2100 }
   ]
 }

@@ -39,8 +39,8 @@ static int parse_digits(const char *p, size_t n, int *out)
 	return 0;
 }
 
-int scribe_validate_date(const char *s, int *out_year,
-                         int *out_month, int *out_day)
+int scribe_validate_date_range(const char *s, int min_year, int max_year,
+                               int *out_year, int *out_month, int *out_day)
 {
 	if (!s || !s[0])
 		return -1;
@@ -69,7 +69,9 @@ int scribe_validate_date(const char *s, int *out_year,
 		return -1;
 	}
 
-	if (y < 1500 || y > 2100)
+	if (min_year > 0 && y < min_year)
+		return -1;
+	if (max_year > 0 && y > max_year)
 		return -1;
 
 	if (out_year)
@@ -78,6 +80,89 @@ int scribe_validate_date(const char *s, int *out_year,
 		*out_month = m;
 	if (out_day)
 		*out_day = d;
+	return 0;
+}
+
+int scribe_validate_date(const char *s, int *out_year,
+                         int *out_month, int *out_day)
+{
+	return scribe_validate_date_range(s, 1500, 2100, out_year, out_month, out_day);
+}
+
+/* Parse a generic number or currency string (e.g. "123.45", "-42", "EUR 1,234.50", "$19.99"). */
+static int parse_number_val(const char *s, int allow_currency, double *out)
+{
+	if (!s || !s[0])
+		return -1;
+
+	const char *p = s;
+	while (*p && isspace((unsigned char)*p))
+		p++;
+
+	if (allow_currency) {
+		/* Skip optional leading currency code/symbol (e.g. "EUR ", "USD ", "$", "€", "£") */
+		while (*p && !isdigit((unsigned char)*p) && *p != '-' && *p != '+' && *p != '.')
+			p++;
+	}
+
+	if (!*p)
+		return -1;
+
+	/* Normalize optional thousands commas/spaces when a decimal point exists */
+	char norm[64];
+	size_t ni = 0;
+	int digits = 0;
+	int dots = 0;
+	if (*p == '-' || *p == '+') {
+		norm[ni++] = *p++;
+	}
+	while (*p && ni + 1 < sizeof(norm)) {
+		if (isdigit((unsigned char)*p)) {
+			norm[ni++] = *p++;
+			digits++;
+		} else if (*p == '.' || *p == ',') {
+			/* Treat comma as decimal separator if <=2 digits follow at end */
+			if (*p == ',' && p[1] && isdigit((unsigned char)p[1]) &&
+			    (!p[2] || (isdigit((unsigned char)p[2]) && !isdigit((unsigned char)p[3])))) {
+				if (dots > 0)
+					return -1;
+				norm[ni++] = '.';
+				dots++;
+				p++;
+			} else if (*p == ',') {
+				p++; /* thousands separator */
+			} else {
+				if (dots > 0)
+					return -1;
+				norm[ni++] = '.';
+				dots++;
+				p++;
+			}
+		} else if (isspace((unsigned char)*p)) {
+			break;
+		} else if (allow_currency) {
+			break; /* trailing currency symbol/code like "12.50 EUR" */
+		} else {
+			return -1;
+		}
+	}
+	norm[ni] = '\0';
+	if (digits == 0)
+		return -1;
+
+	if (!allow_currency) {
+		while (*p && isspace((unsigned char)*p))
+			p++;
+		if (*p != '\0')
+			return -1;
+	}
+
+	char *endp = NULL;
+	double v = strtod(norm, &endp);
+	if (!endp || endp == norm)
+		return -1;
+	if (out)
+		*out = v;
 	return 0;
 }
 
@@ -116,7 +201,8 @@ static int cmp_parsed_dates(int y1, int m1, int d1, int y2, int m2, int d2)
 
 static void check_date_order(scribe_entry_t *entry,
                              const char *earlier_key,
-                             const char *later_key)
+                             const char *later_key,
+                             int min_year, int max_year)
 {
 	scribe_field_val_t *fa = find_field_mut(entry, earlier_key);
 	scribe_field_val_t *fb = find_field_mut(entry, later_key);
@@ -126,20 +212,43 @@ static void check_date_order(scribe_entry_t *entry,
 		return;
 
 	int y1, m1, d1, y2, m2, d2;
-	if (scribe_validate_date(va, &y1, &m1, &d1) != 0)
+	if (scribe_validate_date_range(va, min_year, max_year, &y1, &m1, &d1) != 0)
 		return;
-	if (scribe_validate_date(vb, &y2, &m2, &d2) != 0)
+	if (scribe_validate_date_range(vb, min_year, max_year, &y2, &m2, &d2) != 0)
 		return;
 
 	if (cmp_parsed_dates(y1, m1, d1, y2, m2, d2) > 0)
 		fb->flags |= SCRIBE_FLAG_INVALID;
 }
 
-size_t scribe_validate_entry(const scribe_template_t *tpl,
-                             scribe_entry_t *entry)
+static void check_num_order(scribe_entry_t *entry,
+                            const char *smaller_key,
+                            const char *larger_key)
+{
+	scribe_field_val_t *fa = find_field_mut(entry, smaller_key);
+	scribe_field_val_t *fb = find_field_mut(entry, larger_key);
+	const char *va = effective_field_val(fa);
+	const char *vb = effective_field_val(fb);
+	if (!va || !vb)
+		return;
+
+	double a = 0.0, b = 0.0;
+	if (parse_number_val(va, 1, &a) != 0 || parse_number_val(vb, 1, &b) != 0)
+		return;
+
+	if (a > b + 1e-9)
+		fb->flags |= SCRIBE_FLAG_INVALID;
+}
+
+size_t scribe_validate_entry_ex(const scribe_pack_t *pack,
+                                const scribe_template_t *tpl,
+                                scribe_entry_t *entry)
 {
 	if (!tpl || !entry)
 		return 0;
+
+	int min_year = (pack && pack->min_year > 0) ? pack->min_year : 1500;
+	int max_year = (pack && pack->max_year > 0) ? pack->max_year : 2100;
 
 	/* Clear prior INVALID bits before re-evaluating deterministically. */
 	for (size_t i = 0; i < entry->field_count; i++)
@@ -164,16 +273,44 @@ size_t scribe_validate_entry(const scribe_template_t *tpl,
 		}
 
 		if (spec->type == SCRIBE_FIELD_DATE) {
-			if (scribe_validate_date(val, NULL, NULL, NULL) != 0)
+			if (scribe_validate_date_range(val, min_year, max_year,
+			                               NULL, NULL, NULL) != 0)
+				f->flags |= SCRIBE_FLAG_INVALID;
+		} else if (spec->type == SCRIBE_FIELD_NUMBER) {
+			if (parse_number_val(val, 0, NULL) != 0)
+				f->flags |= SCRIBE_FLAG_INVALID;
+		} else if (spec->type == SCRIBE_FIELD_CURRENCY) {
+			if (parse_number_val(val, 1, NULL) != 0)
+				f->flags |= SCRIBE_FLAG_INVALID;
+		} else if (spec->type == SCRIBE_FIELD_ENUM && spec->enum_count > 0) {
+			int matched = 0;
+			for (size_t e = 0; e < spec->enum_count; e++) {
+				if (spec->enum_values[e] &&
+				    strcmp(spec->enum_values[e], val) == 0) {
+					matched = 1;
+					break;
+				}
+			}
+			if (!matched)
 				f->flags |= SCRIBE_FLAG_INVALID;
 		}
 	}
 
-	/* Chronological sanity across sacramental/archival dates. */
-	check_date_order(entry, "birth_date", "baptism_date");
-	check_date_order(entry, "birth_date", "confirmation_date");
-	check_date_order(entry, "baptism_date", "confirmation_date");
-	check_date_order(entry, "birth_date", "marriage_date");
+	/* Evaluate declarative template constraints (zero hardcoded domain keys). */
+	for (size_t i = 0; i < tpl->constraint_count; i++) {
+		const scribe_constraint_t *c = &tpl->constraints[i];
+		if (c->op == SCRIBE_CONSTRAINT_DATE_LE) {
+			check_date_order(entry, c->lhs, c->rhs, min_year, max_year);
+		} else if (c->op == SCRIBE_CONSTRAINT_NUM_LE) {
+			check_num_order(entry, c->lhs, c->rhs);
+		} else if (c->op == SCRIBE_CONSTRAINT_DATE_RANGE) {
+			scribe_field_val_t *f = find_field_mut(entry, c->lhs);
+			const char *val = effective_field_val(f);
+			if (val && scribe_validate_date_range(val, c->min_year, c->max_year,
+			                                      NULL, NULL, NULL) != 0)
+				f->flags |= SCRIBE_FLAG_INVALID;
+		}
+	}
 
 	size_t flagged = 0;
 	const uint32_t review_mask =
@@ -183,6 +320,12 @@ size_t scribe_validate_entry(const scribe_template_t *tpl,
 			flagged++;
 	}
 	return flagged;
+}
+
+size_t scribe_validate_entry(const scribe_template_t *tpl,
+                             scribe_entry_t *entry)
+{
+	return scribe_validate_entry_ex(NULL, tpl, entry);
 }
 
 /* ── Non-Destructive Advisory Dictionary ───────────────────────── */

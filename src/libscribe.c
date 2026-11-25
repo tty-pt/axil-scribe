@@ -44,11 +44,15 @@ int scribe_status_parse(const char *s, scribe_status_t *out)
 const char *scribe_field_type_str(scribe_field_type_t type)
 {
 	switch (type) {
-	case SCRIBE_FIELD_TEXT:   return "text";
-	case SCRIBE_FIELD_DATE:   return "date";
-	case SCRIBE_FIELD_PERSON: return "person";
-	case SCRIBE_FIELD_PLACE:  return "place";
-	case SCRIBE_FIELD_NOTES:  return "notes";
+	case SCRIBE_FIELD_TEXT:     return "text";
+	case SCRIBE_FIELD_DATE:     return "date";
+	case SCRIBE_FIELD_PERSON:   return "person";
+	case SCRIBE_FIELD_PLACE:    return "place";
+	case SCRIBE_FIELD_NOTES:    return "notes";
+	case SCRIBE_FIELD_NUMBER:   return "number";
+	case SCRIBE_FIELD_CURRENCY: return "currency";
+	case SCRIBE_FIELD_CODE:     return "code";
+	case SCRIBE_FIELD_ENUM:     return "enum";
 	}
 	return "text";
 }
@@ -75,6 +79,51 @@ int scribe_field_type_parse(const char *s, scribe_field_type_t *out)
 	}
 	if (strcmp(s, "notes") == 0) {
 		*out = SCRIBE_FIELD_NOTES;
+		return 0;
+	}
+	if (strcmp(s, "number") == 0) {
+		*out = SCRIBE_FIELD_NUMBER;
+		return 0;
+	}
+	if (strcmp(s, "currency") == 0) {
+		*out = SCRIBE_FIELD_CURRENCY;
+		return 0;
+	}
+	if (strcmp(s, "code") == 0) {
+		*out = SCRIBE_FIELD_CODE;
+		return 0;
+	}
+	if (strcmp(s, "enum") == 0) {
+		*out = SCRIBE_FIELD_ENUM;
+		return 0;
+	}
+	return -1;
+}
+
+const char *scribe_preproc_preset_str(scribe_preproc_preset_t preset)
+{
+	switch (preset) {
+	case SCRIBE_PREPROC_NONE:        return "none";
+	case SCRIBE_PREPROC_HANDWRITING: return "handwriting";
+	case SCRIBE_PREPROC_DOCUMENT:    return "document";
+	}
+	return "none";
+}
+
+int scribe_preproc_preset_parse(const char *s, scribe_preproc_preset_t *out)
+{
+	if (!s || !out)
+		return -1;
+	if (strcmp(s, "none") == 0) {
+		*out = SCRIBE_PREPROC_NONE;
+		return 0;
+	}
+	if (strcmp(s, "handwriting") == 0) {
+		*out = SCRIBE_PREPROC_HANDWRITING;
+		return 0;
+	}
+	if (strcmp(s, "document") == 0) {
+		*out = SCRIBE_PREPROC_DOCUMENT;
 		return 0;
 	}
 	return -1;

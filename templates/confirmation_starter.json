@@ -14,5 +14,8 @@
     { "key": "baptism_date", "label": "Baptism Date", "type": "date", "required": false },
     { "key": "baptism_parish", "label": "Baptism Parish", "type": "place", "required": false },
     { "key": "book_page_entry", "label": "Book / Page / Entry Ref", "type": "text", "required": false }
+  ],
+  "constraints": [
+    { "op": "date_le", "lhs": "baptism_date", "rhs": "confirmation_date" }
   ]
 }

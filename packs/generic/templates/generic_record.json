@@ -1,0 +1,14 @@
+{
+  "id": "generic_record",
+  "label": "Generic Document Record",
+  "version": 1,
+  "prompt_hint": "Extract the main identifying fields from this document verbatim. Output null for unreadable or absent fields. Place side remarks in marginal_notes.",
+  "fields": [
+    { "key": "title", "label": "Document Title / Heading", "type": "text", "required": false },
+    { "key": "subject_name", "label": "Primary Subject / Entity", "type": "text", "required": true },
+    { "key": "date", "label": "Document Date", "type": "date", "required": false, "format_hint": "YYYY-MM-DD" },
+    { "key": "location", "label": "Location / Organization", "type": "text", "required": false },
+    { "key": "reference_id", "label": "Reference / Filing ID", "type": "code", "required": false, "format_hint": "e.g. DOC-2026-001" },
+    { "key": "notes", "label": "Additional Notes", "type": "notes", "required": false }
+  ]
+}

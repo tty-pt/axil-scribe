@@ -6,32 +6,59 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 
 DEMO_MODE=0
+HANDWRITING_DEMO=0
+PACK_ARG=""
 EXTRA_ARGS=""
 while [ $# -gt 0 ]; do
 	case "$1" in
+	--pack)
+		if [ $# -lt 2 ]; then
+			echo "ERROR: --pack requires a pack name or directory path" >&2
+			exit 2
+		fi
+		PACK_ARG="$2"
+		shift 2
+		;;
+	--pack=*)
+		PACK_ARG="${1#--pack=}"
+		shift
+		;;
 	--demo)
 		DEMO_MODE=1
 		shift
 		;;
+	--handwriting-demo)
+		HANDWRITING_DEMO=1
+		shift
+		;;
 	-h|--help)
 		cat <<'EOF'
-Usage: scribe-server [--demo] [extra axil args...]
+Usage: scribe-server [--pack <name|dir>] [--demo | --handwriting-demo] [extra axil args...]
 
 Environment variables:
-  SCRIBE_PORT          HTTP port (default: 8095)
-  SCRIBE_DATA_DIR      Persistent store dir (default: ~/.local/share/axil-scribe/data)
-  SCRIBE_TEMPLATES_DIR Template JSON dir (auto-detected)
-  SCRIBE_DICT_PATH     Optional TSV advisory dictionary
-  SCRIBE_AUREN_HOST    axil-auren host (default: 127.0.0.1)
-  SCRIBE_AUREN_PORT    axil-auren port (default: 4242)
-  SCRIBE_MODEL         Primary VLM model id (default: qwen2.5-vl-7b)
-  SCRIBE_MODEL2        Optional secondary VLM model id for 2-pass conflict routing
-  SCRIBE_MOCK_JSON     Optional mock extraction JSON file/payload (for offline demos)
+  SCRIBE_PORT           HTTP port (default: 8095)
+  SCRIBE_PACK_DIR       Domain pack directory containing pack.json + templates/
+  SCRIBE_DATA_DIR       Persistent store dir (default: ~/.local/share/axil-scribe/data)
+  SCRIBE_TEMPLATES_DIR  Template JSON dir override (auto-detected)
+  SCRIBE_DICT_PATH      Optional extra TSV advisory dictionary
+  SCRIBE_AUREN_HOST     axil-auren host (default: 127.0.0.1)
+  SCRIBE_AUREN_PORT     axil-auren port (default: 4242)
+  SCRIBE_MODEL          Primary VLM model id (default: qwen2.5-vl-7b)
+  SCRIBE_MODEL2         Optional secondary VLM model id for 2-pass conflict routing
+  SCRIBE_ESCALATE_MODEL Optional strong VLM for zoomed-crop arbitration (e.g. smart)
+  SCRIBE_ENHANCE        Set to 1 to pass a gentle contrast-stretched copy alongside raw scan
+  SCRIBE_TIMEOUT_MS     VLM socket timeout in milliseconds (default: 180000)
+  SCRIBE_MOCK_JSON      Optional mock extraction JSON file/payload (for offline demos)
 
 Options:
-  --demo               Launch in an isolated temp data dir with a built-in 2-pass
-                       conflict mock fixture so you can test the full HITL workflow
-                       immediately in your browser without downloading a VLM.
+  --pack <name|dir>     Load a declarative domain pack (e.g. generic,
+                        pt-archival-handwriting, or a path to a pack directory).
+  --demo                Launch in an isolated temp data dir with a built-in 2-pass
+                        conflict mock fixture so you can test the full HITL workflow
+                        immediately in your browser without a live VLM.
+  --handwriting-demo    Download 5 real public-domain 1786-1894 Portuguese handwritten
+                        parish registers and launch with the pt-archival-handwriting
+                        pack and real handwriting defaults.
 EOF
 		exit 0
 		;;
@@ -79,8 +106,33 @@ else
 	exit 1
 fi
 
-# Resolve templates directory
-if [ -z "${SCRIBE_TEMPLATES_DIR:-}" ]; then
+# Auto-select pack for archival demos unless explicitly overridden
+if [ -z "$PACK_ARG" ] && [ -z "${SCRIBE_PACK_DIR:-}" ]; then
+	if [ "$DEMO_MODE" -eq 1 ] || [ "$HANDWRITING_DEMO" -eq 1 ]; then
+		PACK_ARG="pt-archival-handwriting"
+	fi
+fi
+
+# Resolve domain pack directory
+if [ -n "$PACK_ARG" ]; then
+	if [ -f "$PACK_ARG/pack.json" ]; then
+		SCRIBE_PACK_DIR="$PACK_ARG"
+	elif [ -f "$REPO_DIR/packs/$PACK_ARG/pack.json" ]; then
+		SCRIBE_PACK_DIR="$REPO_DIR/packs/$PACK_ARG"
+	elif [ -f "$REPO_DIR/share/axil-scribe/packs/$PACK_ARG/pack.json" ]; then
+		SCRIBE_PACK_DIR="$REPO_DIR/share/axil-scribe/packs/$PACK_ARG"
+	elif [ -f "$HOME/.local/share/axil-scribe/packs/$PACK_ARG/pack.json" ]; then
+		SCRIBE_PACK_DIR="$HOME/.local/share/axil-scribe/packs/$PACK_ARG"
+	elif [ -f "/usr/local/share/axil-scribe/packs/$PACK_ARG/pack.json" ]; then
+		SCRIBE_PACK_DIR="/usr/local/share/axil-scribe/packs/$PACK_ARG"
+	else
+		echo "ERROR: domain pack '$PACK_ARG' not found" >&2
+		exit 1
+	fi
+fi
+
+# Resolve templates directory (only when neither SCRIBE_TEMPLATES_DIR nor SCRIBE_PACK_DIR is set)
+if [ -z "${SCRIBE_TEMPLATES_DIR:-}" ] && [ -z "${SCRIBE_PACK_DIR:-}" ]; then
 	if [ -d "$REPO_DIR/templates" ]; then
 		SCRIBE_TEMPLATES_DIR="$REPO_DIR/templates"
 	elif [ -d "$REPO_DIR/share/axil-scribe/templates" ]; then
@@ -116,6 +168,7 @@ if [ "$DEMO_MODE" -eq 1 ]; then
   {
     "entries": [
       {
+        "transcript": "Aos vinte e quatro dias do mez de Junho de 1954...",
         "fields": {
           "person_name": "Maria das Graças Silva",
           "confirmation_name": "Teresa",
@@ -165,6 +218,35 @@ EOF
 			echo "Sample synthetic scans ready to upload in: $DEMO_DIR/samples/"
 		fi
 	fi
+elif [ "$HANDWRITING_DEMO" -eq 1 ]; then
+	HW_DIR="${SCRIBE_DATA_DIR:-/tmp/axil-scribe-handwriting-demo}"
+	mkdir -p "$HW_DIR"
+	SCRIBE_DATA_DIR="$HW_DIR/data"
+	SCRIBE_MODEL="${SCRIBE_MODEL:-fast}"
+	SCRIBE_MODEL2="${SCRIBE_MODEL2:-very-fast}"
+	SCRIBE_ESCALATE_MODEL="${SCRIBE_ESCALATE_MODEL:-smart}"
+	SCRIBE_ENHANCE="${SCRIBE_ENHANCE:-1}"
+	SCRIBE_TIMEOUT_MS="${SCRIBE_TIMEOUT_MS:-180000}"
+	FETCH_SCRIPT=""
+	if [ -f "$REPO_DIR/tests/fetch_real_handwriting.py" ]; then
+		FETCH_SCRIPT="$REPO_DIR/tests/fetch_real_handwriting.py"
+	elif [ -f "$HOME/.local/share/axil-scribe/tests/fetch_real_handwriting.py" ]; then
+		FETCH_SCRIPT="$HOME/.local/share/axil-scribe/tests/fetch_real_handwriting.py"
+	fi
+	if [ -n "$FETCH_SCRIPT" ] && command -v python3 >/dev/null 2>&1; then
+		echo "Preparing real 1786-1894 Portuguese handwritten parish registers..."
+		python3 "$FETCH_SCRIPT" --out "$HW_DIR/samples" || true
+		if [ -d "$HW_DIR/samples" ]; then
+			echo "Real archival handwritten scans ready to upload in: $HW_DIR/samples/"
+		fi
+	fi
+	if command -v curl >/dev/null 2>&1; then
+		if curl -fsS --max-time 1 "http://${AUREN_HOST}:${AUREN_PORT}/v1/models" >/dev/null 2>&1; then
+			echo "axil-auren reachable at http://${AUREN_HOST}:${AUREN_PORT} (pipeline: ${SCRIBE_MODEL} + ${SCRIBE_MODEL2} -> ${SCRIBE_ESCALATE_MODEL}, enhance=${SCRIBE_ENHANCE})"
+		else
+			echo "NOTE: axil-auren not detected at http://${AUREN_HOST}:${AUREN_PORT}"
+		fi
+	fi
 else
 	SCRIBE_DATA_DIR="${SCRIBE_DATA_DIR:-$HOME/.local/share/axil-scribe/data}"
 	# Non-blocking check for local axil-auren daemon
@@ -178,14 +260,20 @@ else
 fi
 
 export SCRIBE_DATA_DIR
-export SCRIBE_TEMPLATES_DIR
+[ -n "${SCRIBE_PACK_DIR:-}" ] && export SCRIBE_PACK_DIR
+[ -n "${SCRIBE_TEMPLATES_DIR:-}" ] && export SCRIBE_TEMPLATES_DIR
 export SCRIBE_WASM_PATH
 export SCRIBE_AUREN_HOST="$AUREN_HOST"
 export SCRIBE_AUREN_PORT="$AUREN_PORT"
+[ -n "${SCRIBE_MODEL:-}" ] && export SCRIBE_MODEL
+[ -n "${SCRIBE_MODEL2:-}" ] && export SCRIBE_MODEL2
+[ -n "${SCRIBE_ESCALATE_MODEL:-}" ] && export SCRIBE_ESCALATE_MODEL
+[ -n "${SCRIBE_ENHANCE:-}" ] && export SCRIBE_ENHANCE
+[ -n "${SCRIBE_TIMEOUT_MS:-}" ] && export SCRIBE_TIMEOUT_MS
 [ -n "${SCRIBE_MOCK_JSON:-}" ] && export SCRIBE_MOCK_JSON
 [ -n "${SCRIBE_DICT_PATH:-}" ] && export SCRIBE_DICT_PATH
 export LD_LIBRARY_PATH="$LIB_PATHS:${LD_LIBRARY_PATH:-}"
 export DYLD_LIBRARY_PATH="$LIB_PATHS:${DYLD_LIBRARY_PATH:-}"
 
-echo "Starting axil-scribe on http://127.0.0.1:${PORT}/ (data=${SCRIBE_DATA_DIR})"
-exec "$AXIL_BIN" -A -p "$PORT" -m "$MOD_PATH" "$@"
+echo "Starting axil-scribe on http://127.0.0.1:${PORT}/ (pack=${SCRIBE_PACK_DIR:-generic} data=${SCRIBE_DATA_DIR})"
+exec "$AXIL_BIN" -A -d -B "${SCRIBE_MAX_BODY:-33554432}" -p "$PORT" -m "$MOD_PATH" "$@"

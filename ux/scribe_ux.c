@@ -129,6 +129,15 @@ scribe_ux_state_from_json(scribe_ux_state_t *st, const char *json, size_t len)
 		st->view = SCRIBE_UX_VIEW_QUEUE;
 
 	bud_json_str_len(json, len, "flash", st->flash, sizeof(st->flash));
+	bud_json_str_len(json, len, "pack_label", st->pack_label, sizeof(st->pack_label));
+	bud_json_str_len(json, len, "ui_source_label", st->ui_source_label,
+	                 sizeof(st->ui_source_label));
+	bud_json_str_len(json, len, "ui_notes_label", st->ui_notes_label,
+	                 sizeof(st->ui_notes_label));
+	bud_json_str_len(json, len, "ui_transcript_label", st->ui_transcript_label,
+	                 sizeof(st->ui_transcript_label));
+	bud_json_str_len(json, len, "ui_deep_label", st->ui_deep_label,
+	                 sizeof(st->ui_deep_label));
 	bud_json_str_len(json, len, "filter_status", st->filter_status,
 	                 sizeof(st->filter_status));
 	bud_json_str_len(json, len, "filter_template", st->filter_template,
@@ -156,6 +165,8 @@ scribe_ux_state_from_json(scribe_ux_state_t *st, const char *json, size_t len)
 	                 sizeof(st->image_url));
 	bud_json_str_len(json, len, "marginal_notes", st->marginal_notes,
 	                 sizeof(st->marginal_notes));
+	bud_json_str_len(json, len, "transcript", st->transcript,
+	                 sizeof(st->transcript));
 
 	st->zoom_pct = bud_json_int_len(json, len, "zoom_pct", 100);
 	if (st->zoom_pct < 50)
@@ -168,6 +179,7 @@ scribe_ux_state_from_json(scribe_ux_state_t *st, const char *json, size_t len)
 	st->pan_x = bud_json_int_len(json, len, "pan_x", 0);
 	st->pan_y = bud_json_int_len(json, len, "pan_y", 0);
 	st->active_field = bud_json_int_len(json, len, "active_field", -1);
+	st->high_contrast = bud_json_int_len(json, len, "high_contrast", 0) ? 1 : 0;
 
 	nfields = bud_json_int_len(json, len, "field_count", 0);
 	if (nfields < 0)
@@ -186,10 +198,14 @@ scribe_ux_state_from_json(scribe_ux_state_t *st, const char *json, size_t len)
 		bud_json_str_len(json, len, k, f->label, sizeof(f->label));
 		snprintf(k, sizeof(k), "f%d_type", i);
 		bud_json_str_len(json, len, k, f->type, sizeof(f->type));
+		snprintf(k, sizeof(k), "f%d_hint", i);
+		bud_json_str_len(json, len, k, f->format_hint, sizeof(f->format_hint));
 		snprintf(k, sizeof(k), "f%d_req", i);
 		f->required = (uint8_t)(bud_json_int_len(json, len, k, 0) ? 1 : 0);
 		snprintf(k, sizeof(k), "f%d_raw", i);
 		bud_json_str_len(json, len, k, f->raw_value, sizeof(f->raw_value));
+		snprintf(k, sizeof(k), "f%d_alt", i);
+		bud_json_str_len(json, len, k, f->alt_value, sizeof(f->alt_value));
 		snprintf(k, sizeof(k), "f%d_ver", i);
 		bud_json_str_len(json, len, k, f->verified_value,
 		                 sizeof(f->verified_value));
@@ -290,12 +306,40 @@ scribe_ux_apply_action(scribe_ux_state_t *st, int action_id, const char *data)
 			st->active_field = idx;
 		return 0;
 
+	case SCRIBE_UX_ACT_TOGGLE_CONTRAST:
+		st->high_contrast = st->high_contrast ? 0 : 1;
+		return 0;
+
 	default:
 		return -1;
 	}
 }
 
 /* ── Pure libbud View Components ───────────────────────────────── */
+
+static const char *
+ux_source_label(const scribe_ux_state_t *st)
+{
+	return (st && st->ui_source_label[0]) ? st->ui_source_label : "Source Ref";
+}
+
+static const char *
+ux_notes_label(const scribe_ux_state_t *st)
+{
+	return (st && st->ui_notes_label[0]) ? st->ui_notes_label : "Notes / Corrections";
+}
+
+static const char *
+ux_transcript_label(const scribe_ux_state_t *st)
+{
+	return (st && st->ui_transcript_label[0]) ? st->ui_transcript_label : "Full Transcript";
+}
+
+static const char *
+ux_deep_label(const scribe_ux_state_t *st)
+{
+	return (st && st->ui_deep_label[0]) ? st->ui_deep_label : "Deep Re-Extract";
+}
 
 static bud_node *
 render_nav(const scribe_ux_state_t *st)
@@ -316,6 +360,8 @@ render_nav(const scribe_ux_state_t *st)
 	bud_append(nav, l_json);
 
 	bud_append(hdr, brand);
+	if (st->pack_label[0])
+		append_text_el(hdr, "span", "scribe-badge scribe-pack-badge", st->pack_label);
 	bud_append(hdr, nav);
 	return hdr;
 }
@@ -357,6 +403,7 @@ render_queue_table(const scribe_ux_state_t *st, const char *empty_msg)
 	bud_node *thead;
 	bud_node *trh;
 	bud_node *tbody;
+	char col_src[64];
 	size_t i;
 
 	if (st->item_count == 0) {
@@ -364,11 +411,12 @@ render_queue_table(const scribe_ux_state_t *st, const char *empty_msg)
 		return wrap;
 	}
 
+	snprintf(col_src, sizeof(col_src), "%s / Page", ux_source_label(st));
 	tbl = el_class("table", "scribe-table");
 	thead = bud_element_lit("thead");
 	trh = bud_element_lit("tr");
 	append_text_el(trh, "th", NULL, "Entry");
-	append_text_el(trh, "th", NULL, "Book / Page");
+	append_text_el(trh, "th", NULL, col_src);
 	append_text_el(trh, "th", NULL, "Template");
 	append_text_el(trh, "th", NULL, "Status");
 	append_text_el(trh, "th", NULL, "Flags");
@@ -449,6 +497,8 @@ render_queue_view(const scribe_ux_state_t *st)
 	static const char *const status_labels[] = {
 		"All statuses", "Needs review", "Extracted", "Pending", "Verified"
 	};
+	char src_ph[80];
+	char flt_ph[80];
 	size_t i;
 
 	/* Upload & Ingest form (No-JS native multipart/form-data) */
@@ -462,9 +512,10 @@ render_queue_view(const scribe_ux_state_t *st)
 	bud_set_attr_lit(f_file, "accept", "image/*,application/pdf");
 	bud_set_bool_attr_lit(f_file, "required");
 
+	snprintf(src_ph, sizeof(src_ph), "%s (optional)", ux_source_label(st));
 	bud_set_attr_lit(f_book, "type", "text");
 	bud_set_attr_lit(f_book, "name", "book_ref");
-	bud_set_attr_lit(f_book, "placeholder", "Book ref (e.g. Livro-1954)");
+	bud_set_attr_name_lit(f_book, "placeholder", src_ph);
 
 	bud_set_attr_lit(f_page, "type", "number");
 	bud_set_attr_lit(f_page, "name", "page_num");
@@ -504,9 +555,10 @@ render_queue_view(const scribe_ux_state_t *st)
 		bud_append(sel_st, opt);
 	}
 
+	snprintf(flt_ph, sizeof(flt_ph), "Filter by %s", ux_source_label(st));
 	bud_set_attr_lit(in_book, "type", "text");
 	bud_set_attr_lit(in_book, "name", "book_ref");
-	bud_set_attr_lit(in_book, "placeholder", "Filter by book_ref");
+	bud_set_attr_name_lit(in_book, "placeholder", flt_ph);
 	if (st->filter_book[0])
 		bud_set_attr_name_lit(in_book, "value", st->filter_book);
 
@@ -547,6 +599,7 @@ render_entry_view(const scribe_ux_state_t *st)
 	bud_node *page_actions = el_class("div", "scribe-page-actions");
 	bud_node *add_form = el_class("form", "scribe-inline-form");
 	bud_node *ext_form = el_class("form", "scribe-inline-form");
+	bud_node *deep_form = el_class("form", "scribe-inline-form");
 	bud_node *right = el_class("section", "scribe-form-pane");
 	bud_node *meta = el_class("div", "scribe-meta-bar");
 	bud_node *vform = el_class("form", "scribe-verify-form");
@@ -572,6 +625,10 @@ render_entry_view(const scribe_ux_state_t *st)
 	bud_append(toolbar, render_action_btn("Reset", SCRIBE_UX_ACT_ZOOM_RESET, "Reset viewport"));
 	bud_append(toolbar, render_action_btn("Rot -90", SCRIBE_UX_ACT_ROTATE_CCW, "Rotate counter-clockwise"));
 	bud_append(toolbar, render_action_btn("Rot +90", SCRIBE_UX_ACT_ROTATE_CW, "Rotate clockwise"));
+	bud_append(toolbar, render_action_btn(
+		st->high_contrast ? "Contrast: ON" : "Contrast",
+		SCRIBE_UX_ACT_TOGGLE_CONTRAST,
+		"Toggle non-destructive high-contrast view"));
 	bud_append(toolbar, render_action_btn("Next Flagged", SCRIBE_UX_ACT_NEXT_FLAGGED, "Jump to next flagged field"));
 	bud_append(left, toolbar);
 
@@ -581,8 +638,10 @@ render_entry_view(const scribe_ux_state_t *st)
 	                 st->zoom_pct / 100, st->zoom_pct % 100,
 	                 st->rotate_deg);
 	bud_set_attr_name_lit(img, "src", st->image_url);
-	bud_set_attr_fmt(img, "alt", "Archival scan %s page %u",
+	bud_set_attr_fmt(img, "alt", "Document scan %s page %u",
 	                 st->book_ref[0] ? st->book_ref : st->page_id, st->page_num);
+	if (st->high_contrast)
+		bud_set_attr_lit(img, "style", "filter: contrast(1.45) brightness(1.06);");
 	bud_append(stage, img);
 
 	/* Bounding-box overlay for active field if bbox present */
@@ -604,7 +663,7 @@ render_entry_view(const scribe_ux_state_t *st)
 	bud_append(viewport, stage);
 	bud_append(left, viewport);
 
-	/* Page-level actions: split new entry, re-extract, printable transcript */
+	/* Page-level actions: split new entry, re-extract, deep mode, printable transcript */
 	snprintf(url_buf, sizeof(url_buf), "/pages/%s/entries", st->page_id);
 	bud_set_attr_lit(add_form, "method", "POST");
 	bud_set_attr_name_lit(add_form, "action", url_buf);
@@ -618,11 +677,17 @@ render_entry_view(const scribe_ux_state_t *st)
 	bud_append(ext_form, bud_submit_btn("Re-run Extraction", "scribe-btn scribe-btn-sm"));
 	bud_append(page_actions, ext_form);
 
+	snprintf(url_buf, sizeof(url_buf), "/entries/%s/extract?deep=1", st->entry_id);
+	bud_set_attr_lit(deep_form, "method", "POST");
+	bud_set_attr_name_lit(deep_form, "action", url_buf);
+	bud_append(deep_form, bud_submit_btn(ux_deep_label(st), "scribe-btn scribe-btn-sm"));
+	bud_append(page_actions, deep_form);
+
 	snprintf(url_buf, sizeof(url_buf), "/entries/%s/transcript", st->entry_id);
 	bud_append(page_actions, bud_link(url_buf, "Printable Transcript", "scribe-btn scribe-btn-sm"));
 	bud_append(left, page_actions);
 
-	/* Right Pane: Metadata + Schema-Driven Verification Form */
+	/* Right Pane: Metadata + Transcript + Schema-Driven Verification Form */
 	{
 		bud_node *title = bud_element_lit("h2");
 		bud_append(title, bud_textf("%s (%s)",
@@ -636,7 +701,7 @@ render_entry_view(const scribe_ux_state_t *st)
 	append_text_el(meta, "span", cls_buf, st->status);
 	if (st->book_ref[0]) {
 		bud_node *bp = el_class("span", "scribe-meta-item");
-		bud_append(bp, bud_textf("Book: %s p.%u", st->book_ref, st->page_num));
+		bud_append(bp, bud_textf("%s: %s p.%u", ux_source_label(st), st->book_ref, st->page_num));
 		bud_append(meta, bp);
 	}
 	if (st->extractor_model[0]) {
@@ -650,6 +715,17 @@ render_entry_view(const scribe_ux_state_t *st)
 		bud_append(meta, rb);
 	}
 	bud_append(right, meta);
+
+	if (st->transcript[0]) {
+		bud_node *det = el_class("details", "scribe-transcript-box");
+		bud_node *sum = bud_element_lit("summary");
+		bud_node *pre = bud_element_lit("pre");
+		bud_append(sum, bud_text(ux_transcript_label(st)));
+		bud_append(pre, bud_text(st->transcript));
+		bud_append(det, sum);
+		bud_append(det, pre);
+		bud_append(right, det);
+	}
 
 	snprintf(url_buf, sizeof(url_buf), "/entries/%s/verify", st->entry_id);
 	bud_set_attr_lit(vform, "method", "POST");
@@ -712,6 +788,11 @@ render_entry_view(const scribe_ux_state_t *st)
 			                             f->raw_value[0] ? f->raw_value : "(empty / illegible)"));
 			bud_append(row, raw_el);
 		}
+		if (f->alt_value[0]) {
+			bud_node *alt_el = el_class("div", "scribe-alt-value");
+			bud_append(alt_el, bud_textf("Pass 2 / Alt: %s", f->alt_value));
+			bud_append(row, alt_el);
+		}
 
 		display_val = f->verified_value[0] ? f->verified_value : f->raw_value;
 		if (strcmp(f->type, "notes") == 0) {
@@ -727,7 +808,9 @@ render_entry_view(const scribe_ux_state_t *st)
 			bud_set_attr_name_lit(input, "id", in_id);
 			bud_set_attr_name_lit(input, "name", in_name);
 			bud_set_attr_name_lit(input, "value", display_val);
-			if (strcmp(f->type, "date") == 0)
+			if (f->format_hint[0])
+				bud_set_attr_name_lit(input, "placeholder", f->format_hint);
+			else if (strcmp(f->type, "date") == 0)
 				bud_set_attr_lit(input, "placeholder", "YYYY-MM-DD");
 		}
 		bud_append(row, input);
@@ -758,8 +841,8 @@ render_entry_view(const scribe_ux_state_t *st)
 		bud_append(vform, row);
 	}
 
-	/* Marginal notes */
-	append_text_el(notes_wrap, "label", "scribe-label", "Marginal Notes / Corrections");
+	/* Notes / corrections */
+	append_text_el(notes_wrap, "label", "scribe-label", ux_notes_label(st));
 	bud_set_attr_lit(notes_ta, "name", "marginal_notes");
 	bud_set_attr_lit(notes_ta, "rows", "3");
 	if (st->marginal_notes[0])
@@ -771,7 +854,7 @@ render_entry_view(const scribe_ux_state_t *st)
 	append_text_el(rev_wrap, "label", "scribe-label", "Reviewer");
 	bud_set_attr_lit(rev_in, "type", "text");
 	bud_set_attr_lit(rev_in, "name", "reviewed_by");
-	bud_set_attr_lit(rev_in, "placeholder", "Archivist name or initials");
+	bud_set_attr_lit(rev_in, "placeholder", "Reviewer name or initials");
 	if (st->reviewed_by[0])
 		bud_set_attr_name_lit(rev_in, "value", st->reviewed_by);
 	bud_append(rev_wrap, rev_in);

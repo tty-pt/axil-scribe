@@ -18,7 +18,7 @@ extern "C" {
 
 #define SCRIBE_VERSION "0.1.0"
 
-/* ── Template Schema ───────────────────────────────────────────── */
+/* ── Template Schema & Declarative Constraints ───────────────────── */
 
 typedef enum {
 	SCRIBE_FIELD_TEXT = 0,
@@ -26,6 +26,10 @@ typedef enum {
 	SCRIBE_FIELD_PERSON,
 	SCRIBE_FIELD_PLACE,
 	SCRIBE_FIELD_NOTES,
+	SCRIBE_FIELD_NUMBER,
+	SCRIBE_FIELD_CURRENCY,
+	SCRIBE_FIELD_CODE,
+	SCRIBE_FIELD_ENUM,
 } scribe_field_type_t;
 
 typedef struct {
@@ -33,7 +37,25 @@ typedef struct {
 	char *label;
 	scribe_field_type_t type;
 	uint8_t required;
+	char *dict_category;   /* optional advisory dict category (NULL -> legacy person/place) */
+	char *format_hint;     /* optional format guidance for prompt & UI placeholder */
+	char **enum_values;    /* optional allowed values for SCRIBE_FIELD_ENUM */
+	size_t enum_count;
 } scribe_field_spec_t;
+
+typedef enum {
+	SCRIBE_CONSTRAINT_DATE_LE = 0,   /* lhs <= rhs (ISO dates) */
+	SCRIBE_CONSTRAINT_NUM_LE,        /* lhs <= rhs (decimal numbers) */
+	SCRIBE_CONSTRAINT_DATE_RANGE,    /* min_year <= year(lhs) <= max_year */
+} scribe_constraint_op_t;
+
+typedef struct {
+	scribe_constraint_op_t op;
+	char *lhs;       /* primary field key */
+	char *rhs;       /* secondary field key (for DATE_LE / NUM_LE) */
+	int min_year;    /* for DATE_RANGE (0 = unbounded) */
+	int max_year;    /* for DATE_RANGE (0 = unbounded) */
+} scribe_constraint_t;
 
 typedef struct {
 	char *id;
@@ -42,11 +64,40 @@ typedef struct {
 	char *prompt_hint;
 	scribe_field_spec_t *fields;
 	size_t field_count;
+	scribe_constraint_t *constraints;
+	size_t constraint_count;
 	/** Compiled framework-neutral hyle descriptors (field_count + 1, FIELD_END). */
 	hyle_schema_desc_t *hyle_defs;
 } scribe_template_t;
 
 typedef struct scribe_registry scribe_registry_t;
+
+/* ── Domain Pack Profile (Generic Engine -> Vertical Adaptation) ─ */
+
+typedef enum {
+	SCRIBE_PREPROC_NONE = 0,
+	SCRIBE_PREPROC_HANDWRITING,
+	SCRIBE_PREPROC_DOCUMENT,
+} scribe_preproc_preset_t;
+
+typedef struct {
+	char *id;
+	char *label;
+	char *base_dir;            /* pack root directory on disk (NULL if JSON-only) */
+	char *system_persona;      /* VLM persona role (NULL -> generic transcription) */
+	char *extraction_guide;    /* domain methodology, abbreviations, orthography */
+	char *uncertainty_markers; /* comma-separated markers beyond "[?]" */
+	scribe_preproc_preset_t preprocess_preset;
+	int transcript_first;      /* 1 = emit full transcript before structured fields */
+	int min_year;              /* default date min year (0 = unbounded / default) */
+	int max_year;              /* default date max year (0 = unbounded / default) */
+	/* Optional UI vocabulary overrides */
+	char *ui_source_label;     /* default "Source Ref" */
+	char *ui_notes_label;      /* default "Notes / Corrections" */
+	char *ui_transcript_label; /* default "Full Transcript" */
+	char *ui_deep_label;       /* default "Deep Re-Extract" */
+	char *ui_print_title;      /* default "Document Transcript" */
+} scribe_pack_t;
 
 /* ── Immutable Source Page ─────────────────────────────────────── */
 
@@ -82,6 +133,7 @@ typedef enum {
 typedef struct {
 	char key[64];
 	char *raw_value;       /* verbatim VLM transcription (NULL if illegible) */
+	char *alt_value;       /* competing Pass-2 / pre-arbitration reading on CONFLICT */
 	char *verified_value;  /* human-verified canonical value (NULL if unverified) */
 	uint32_t flags;        /* bitmask of scribe_field_flags_t */
 	float bbox[4];         /* optional normalized [x, y, w, h], all 0 if absent */
@@ -96,6 +148,7 @@ typedef struct {
 	char reviewed_by[64];
 	int64_t reviewed_at;
 	char *marginal_notes;
+	char *transcript;      /* full diplomatic line-by-line handwriting transcript */
 	scribe_field_val_t *fields;
 	size_t field_count;
 } scribe_entry_t;
@@ -134,12 +187,21 @@ const char *scribe_status_str(scribe_status_t status);
 int scribe_status_parse(const char *s, scribe_status_t *out);
 const char *scribe_field_type_str(scribe_field_type_t type);
 int scribe_field_type_parse(const char *s, scribe_field_type_t *out);
+const char *scribe_preproc_preset_str(scribe_preproc_preset_t preset);
+int scribe_preproc_preset_parse(const char *s, scribe_preproc_preset_t *out);
 
 /**
  * @brief Locale-independent UTF-8 Latin diacritic fold to lowercase ASCII.
  * @return Bytes written (excluding NUL), or -1 if outsz is insufficient.
  */
 int scribe_ascii_fold(char *out, size_t outsz, const char *in);
+
+/* ── Domain Pack Loading ───────────────────────────────────────── */
+
+scribe_pack_t *scribe_pack_load_json(const char *json_str);
+scribe_pack_t *scribe_pack_load_file(const char *path);
+scribe_pack_t *scribe_pack_load_dir(const char *pack_dir);
+void scribe_pack_free(scribe_pack_t *pack);
 
 /* ── Template Loading & Registry ───────────────────────────────── */
 
@@ -216,7 +278,11 @@ int scribe_entry_set_field(scribe_entry_t *entry,
                            const float bbox[4]);
 const scribe_field_val_t *scribe_entry_get_field(const scribe_entry_t *entry,
                                                  const char *key);
+int scribe_entry_set_field_alt(scribe_entry_t *entry,
+                               const char *key,
+                               const char *alt_value);
 int scribe_entry_set_marginal_notes(scribe_entry_t *entry, const char *notes);
+int scribe_entry_set_transcript(scribe_entry_t *entry, const char *transcript);
 
 int scribe_entry_put(scribe_store_t *store, scribe_entry_t *entry);
 int scribe_entry_get(scribe_store_t *store, const char *entry_id,
@@ -240,17 +306,32 @@ void scribe_id_list_free(scribe_id_list_t *list);
 
 /**
  * @brief Validate ISO date ("YYYY", "YYYY-MM", or "YYYY-MM-DD") with
- *        calendar/leap-year checks and archival year bounds [1500..2100].
+ *        calendar/leap-year checks and optional year bounds (0 = unbounded).
+ * @return 0 if valid, -1 if invalid.
+ */
+int scribe_validate_date_range(const char *s, int min_year, int max_year,
+                               int *out_year, int *out_month, int *out_day);
+
+/**
+ * @brief Validate ISO date with default year bounds [1500..2100].
  * @return 0 if valid, -1 if invalid.
  */
 int scribe_validate_date(const char *s, int *out_year,
                          int *out_month, int *out_day);
 
 /**
- * @brief Validate required fields, date syntax, and chronological invariants.
+ * @brief Validate required fields, field types (date/number/currency/enum),
+ *        and declarative template constraints, using optional pack bounds.
  *
  * Sets SCRIBE_FLAG_INVALID on failing fields without mutating raw/verified text.
  * @return Number of fields bearing any review flag (ILLEGIBLE|CONFLICT|INVALID).
+ */
+size_t scribe_validate_entry_ex(const scribe_pack_t *pack,
+                                const scribe_template_t *tpl,
+                                scribe_entry_t *entry);
+
+/**
+ * @brief Validate entry with default pack settings (pack == NULL).
  */
 size_t scribe_validate_entry(const scribe_template_t *tpl,
                              scribe_entry_t *entry);
@@ -293,13 +374,24 @@ typedef struct {
 	                    const char *prompt,
 	                    float temperature,
 	                    char **out_json);
+	/** Optional multi-image callback (e.g. full page + zoomed/enhanced crop). */
+	int (*extract_json_multi)(void *ctx,
+	                          const uint8_t *const *images,
+	                          const size_t *image_lens,
+	                          const char *const *mimes,
+	                          size_t image_count,
+	                          const scribe_template_t *tpl,
+	                          const char *model,
+	                          const char *prompt,
+	                          float temperature,
+	                          char **out_json);
 } scribe_extractor_ops_t;
 
 typedef struct {
 	const char *host;       /* default "127.0.0.1" */
 	uint16_t port;          /* default 4242 */
 	const char *endpoint;   /* default "/v1/chat/completions" */
-	int timeout_ms;         /* default 60000 */
+	int timeout_ms;         /* default 180000 */
 } scribe_auren_config_t;
 
 typedef struct {
@@ -308,12 +400,59 @@ typedef struct {
 	size_t call_index;
 } scribe_mock_extractor_t;
 
+typedef struct {
+	const char *model_primary;    /* Pass-1 VLM model (default "chat") */
+	const char *model_secondary;  /* Optional Pass-2 model for conflict routing */
+	const char *model_escalate;   /* Optional strong model for zoomed-crop arbitration */
+	int enhance_handwriting;      /* 1 = force handwriting contrast view alongside raw scan */
+	const scribe_pack_t *pack;    /* Optional domain pack (NULL = generic defaults) */
+} scribe_extract_opts_t;
+
 const scribe_extractor_ops_t *scribe_extractor_auren(void);
 const scribe_extractor_ops_t *scribe_extractor_mock(void);
 
 char *scribe_base64_encode(const uint8_t *data, size_t len);
+int scribe_build_extraction_prompt_ex(const scribe_pack_t *pack,
+                                      const scribe_template_t *tpl,
+                                      char **out_prompt);
 int scribe_build_extraction_prompt(const scribe_template_t *tpl,
                                    char **out_prompt);
+
+/**
+ * @brief Return 1 if @p val contains an explicit uncertainty marker such as
+ *        "[?]" or any pack-configured marker (default includes "[ileg", "[illeg").
+ */
+int scribe_has_uncertain_marker_ex(const char *val, const scribe_pack_t *pack);
+int scribe_has_uncertain_marker(const char *val);
+
+/**
+ * @brief Produce an ephemeral OCR-ready image using a preprocessing preset
+ *        ("none" | "handwriting" | "document") without touching the immutable
+ *        source scan on disk. Caller frees *@p out_bytes.
+ * @return 0 on success, -1 if external tool unavailable (caller falls back to raw).
+ */
+int scribe_prepare_ocr_image_preset(const char *src_path,
+                                    scribe_preproc_preset_t preset,
+                                    uint8_t **out_bytes,
+                                    size_t *out_len,
+                                    char out_mime[64]);
+
+int scribe_prepare_ocr_image(const char *src_path,
+                             int enhance_handwriting,
+                             uint8_t **out_bytes,
+                             size_t *out_len,
+                             char out_mime[64]);
+
+/**
+ * @brief Crop and upscale (150%) a normalized [x, y, w, h] region with gentle
+ *        non-destructive contrast enhancement for zoomed cursive re-reading.
+ *        Caller frees *@p out_bytes.
+ */
+int scribe_crop_ocr_region(const char *src_path,
+                           const float bbox[4],
+                           uint8_t **out_bytes,
+                           size_t *out_len,
+                           char out_mime[64]);
 
 /**
  * @brief Parse raw VLM JSON response (stripping optional markdown fences)
@@ -328,7 +467,7 @@ int scribe_parse_extraction_json(const char *raw_response,
 
 /**
  * @brief Compare two extraction passes and set SCRIBE_FLAG_CONFLICT wherever
- *        Pass 1 and Pass 2 disagree.
+ *        Pass 1 and Pass 2 disagree, preserving the competing value in alt_value.
  * @return Number of conflicting fields detected.
  */
 size_t scribe_merge_two_pass(scribe_entry_t *pass1, size_t count1,
@@ -347,6 +486,19 @@ int scribe_extract_page(scribe_store_t *store,
                         const char *model_secondary,
                         scribe_entry_t **out_entries,
                         size_t *out_count);
+
+/**
+ * @brief Extended extraction supporting gentle handwriting contrast enhancement
+ *        and automatic zoomed-crop escalation on CONFLICT / ILLEGIBLE fields.
+ */
+int scribe_extract_page_ex(scribe_store_t *store,
+                           const scribe_page_t *page,
+                           const scribe_template_t *tpl,
+                           const scribe_extractor_ops_t *ops,
+                           void *extractor_ctx,
+                           const scribe_extract_opts_t *opts,
+                           scribe_entry_t **out_entries,
+                           size_t *out_count);
 
 /* ── Benchmark Scoring ─────────────────────────────────────────── */
 

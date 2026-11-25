@@ -1,0 +1,20 @@
+{
+  "id": "baptism_starter",
+  "label": "Baptism Register (Assento de Baptismo)",
+  "version": 1,
+  "prompt_hint": "Transcribe this Baptism register entry (assento de baptismo) verbatim. Preserve exact historical spellings, dates of birth and baptism, parents, and godparents (padrinhos). Output null for illegible ink. Place later confirmation, marriage, or death averbamentos in marginal_notes.",
+  "fields": [
+    { "key": "person_name", "label": "Baptized Full Name", "type": "person", "required": true, "dict_category": "person" },
+    { "key": "birth_date", "label": "Date of Birth", "type": "date", "required": false, "format_hint": "YYYY-MM-DD" },
+    { "key": "baptism_date", "label": "Date of Baptism", "type": "date", "required": true, "format_hint": "YYYY-MM-DD" },
+    { "key": "parish", "label": "Parish / Freguesia", "type": "place", "required": true, "dict_category": "place" },
+    { "key": "father_name", "label": "Father Full Name", "type": "person", "required": false, "dict_category": "person" },
+    { "key": "mother_name", "label": "Mother Full Name", "type": "person", "required": false, "dict_category": "person" },
+    { "key": "godparents", "label": "Godparents / Padrinhos", "type": "person", "required": false, "dict_category": "person" },
+    { "key": "officiant", "label": "Officiant / Pároco", "type": "person", "required": false, "dict_category": "person" },
+    { "key": "book_page_entry", "label": "Book / Folio / Entry Ref", "type": "text", "required": false, "format_hint": "e.g. Livro 12 fl. 45v #3" }
+  ],
+  "constraints": [
+    { "op": "date_le", "lhs": "birth_date", "rhs": "baptism_date" }
+  ]
+}

@@ -49,6 +49,7 @@ typedef enum {
 	SCRIBE_UX_ACT_NEXT_FLAGGED = 10,
 	SCRIBE_UX_ACT_TOGGLE_ILLEG = 11,
 	SCRIBE_UX_ACT_FOCUS_FIELD  = 12,
+	SCRIBE_UX_ACT_TOGGLE_CONTRAST = 13,
 } scribe_ux_action_t;
 
 typedef struct {
@@ -71,8 +72,10 @@ typedef struct {
 	char key[64];
 	char label[96];
 	char type[16];
+	char format_hint[64];
 	uint8_t required;
 	char raw_value[256];
+	char alt_value[256];
 	char verified_value[256];
 	uint32_t flags;
 	float bbox[4]; /* normalized [x, y, w, h], all 0 if absent */
@@ -83,6 +86,13 @@ typedef struct {
 typedef struct {
 	scribe_ux_view_t view;
 	char flash[256];
+
+	/* Optional domain-pack UI vocabulary overrides (empty => generic defaults) */
+	char pack_label[96];
+	char ui_source_label[48];
+	char ui_notes_label[64];
+	char ui_transcript_label[64];
+	char ui_deep_label[48];
 
 	/* Filters & search */
 	char filter_status[32];
@@ -111,16 +121,18 @@ typedef struct {
 	char reviewed_by[64];
 	char image_url[128];
 	char marginal_notes[512];
+	char transcript[4096];
 
 	scribe_ux_field_t fields[SCRIBE_UX_MAX_FIELDS];
 	size_t field_count;
 
 	/* Interactive viewport & focus state */
-	int zoom_pct;     /* 50 .. 400, default 100 */
-	int rotate_deg;   /* 0, 90, 180, 270 */
-	int pan_x;        /* px offset */
-	int pan_y;        /* px offset */
-	int active_field; /* index into fields[], or -1 */
+	int zoom_pct;      /* 50 .. 400, default 100 */
+	int rotate_deg;    /* 0, 90, 180, 270 */
+	int pan_x;         /* px offset */
+	int pan_y;         /* px offset */
+	int active_field;  /* index into fields[], or -1 */
+	int high_contrast; /* 1 = apply non-destructive high-contrast scan filter */
 } scribe_ux_state_t;
 
 /** Initialize state with safe viewport defaults (zoom=100, active_field=-1). */

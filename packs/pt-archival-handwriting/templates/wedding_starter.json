@@ -1,0 +1,20 @@
+{
+  "id": "wedding_starter",
+  "label": "Marriage Register (Assento de Casamento)",
+  "version": 1,
+  "prompt_hint": "Transcribe this Wedding/Marriage parish register entry (assento de casamento) verbatim. Preserve exact historical spellings and diacritics for both spouses, parents, witnesses (testemunhas), and officiant. Output null for illegible text. Capture dispensations or margin averbamentos in marginal_notes.",
+  "fields": [
+    { "key": "groom_name", "label": "Groom Full Name", "type": "person", "required": true, "dict_category": "person" },
+    { "key": "bride_name", "label": "Bride Full Name", "type": "person", "required": true, "dict_category": "person" },
+    { "key": "marriage_date", "label": "Marriage Date", "type": "date", "required": true, "format_hint": "YYYY-MM-DD" },
+    { "key": "parish", "label": "Parish / Freguesia", "type": "place", "required": true, "dict_category": "place" },
+    { "key": "groom_parents", "label": "Groom's Parents", "type": "person", "required": false, "dict_category": "person" },
+    { "key": "bride_parents", "label": "Bride's Parents", "type": "person", "required": false, "dict_category": "person" },
+    { "key": "witnesses", "label": "Witnesses / Testemunhas", "type": "person", "required": false, "dict_category": "person" },
+    { "key": "officiant", "label": "Officiant / Pároco", "type": "person", "required": false, "dict_category": "person" },
+    { "key": "book_page_entry", "label": "Book / Folio / Entry Ref", "type": "text", "required": false, "format_hint": "e.g. Livro 5 fl. 22 #4" }
+  ],
+  "constraints": [
+    { "op": "date_range", "lhs": "marriage_date", "min": 1500, "max": 2100 }
+  ]
+}

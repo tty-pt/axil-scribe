@@ -13,5 +13,8 @@
     { "key": "godparents", "label": "Godparents / Sponsors", "type": "person", "required": false },
     { "key": "officiant", "label": "Officiant / Priest", "type": "person", "required": false },
     { "key": "book_page_entry", "label": "Book / Page / Entry Ref", "type": "text", "required": false }
+  ],
+  "constraints": [
+    { "op": "date_le", "lhs": "birth_date", "rhs": "baptism_date" }
   ]
 }

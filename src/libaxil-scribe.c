@@ -9,6 +9,7 @@
  */
 
 #include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,13 +36,18 @@ typedef struct {
 	scribe_store_t *store;
 	scribe_registry_t *registry;
 	scribe_dict_t *dict;
+	scribe_pack_t *pack;
 	char data_dir[256];
+	char pack_dir[256];
 	char templates_dir[256];
 	char wasm_path[256];
 	char auren_host[128];
 	uint16_t auren_port;
 	char model_primary[128];
 	char model_secondary[128];
+	char model_escalate[128];
+	int enhance_handwriting;
+	int timeout_ms;
 	char *mock_responses[SCRIBE_MAX_MOCK_RESPONSES];
 	size_t mock_response_count;
 	int initialized;
@@ -337,6 +343,8 @@ static const char *const SCRIBE_CSS_CHUNKS[] = {
 	".scribe-header{display:flex;align-items:center;justify-content:space-between;"
 	"padding:10px 18px;background:#16241f;color:#f4f1ea;border-bottom:2px solid var(--accent);}\n"
 	".scribe-brand{color:#fff;font-weight:700;font-size:16px;text-decoration:none;letter-spacing:.03em;}\n"
+	".scribe-pack-badge{background:rgba(255,255,255,.16);color:#e6f2ed;font-size:11px;"
+	"padding:2px 8px;border-radius:99px;font-weight:600;}\n"
 	".scribe-nav{display:flex;gap:14px;flex-wrap:wrap;}\n"
 	".scribe-nav a{color:#d5e2dc;text-decoration:none;padding:4px 8px;border-radius:4px;}\n"
 	".scribe-nav a.is-active,.scribe-nav a:hover{background:rgba(255,255,255,.14);color:#fff;}\n"
@@ -401,6 +409,12 @@ static const char *const SCRIBE_CSS_CHUNKS[] = {
 	".scribe-label{font-weight:600;display:block;margin-bottom:4px;}\n"
 	".scribe-req{color:var(--invalid);}.scribe-flags{display:flex;gap:4px;flex-wrap:wrap;}\n"
 	".scribe-raw-value{font-size:12px;color:var(--muted);margin-bottom:5px;font-family:ui-monospace,monospace;}\n"
+	".scribe-alt-value{font-size:12px;color:var(--conflict);margin-bottom:5px;font-family:ui-monospace,monospace;}\n"
+	".scribe-transcript-box{border:1px solid var(--line);border-radius:6px;background:#faf8f2;"
+	"padding:8px 10px;margin-bottom:12px;}\n"
+	".scribe-transcript-box summary{cursor:pointer;font-weight:600;font-size:13px;color:var(--accent);}\n"
+	".scribe-transcript-box pre{margin:8px 0 0;white-space:pre-wrap;font-size:12px;line-height:1.5;"
+	"font-family:ui-serif,Georgia,serif;color:var(--ink);max-height:240px;overflow:auto;}\n"
 	".scribe-field .scribe-input{width:100%;margin-bottom:5px;}\n"
 	".scribe-check{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);}\n"
 	".scribe-suggestions{margin-top:5px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;}\n"
@@ -418,11 +432,31 @@ static const char *const SCRIBE_CSS_CHUNKS[] = {
 /* ── UX State & JSON Serialization Builders ────────────────────── */
 
 static void
+populate_pack_ui(scribe_ux_state_t *st)
+{
+	if (!g_ctx.pack)
+		return;
+	if (g_ctx.pack->label && g_ctx.pack->label[0])
+		snprintf(st->pack_label, sizeof(st->pack_label), "%s", g_ctx.pack->label);
+	else if (g_ctx.pack->id && g_ctx.pack->id[0])
+		snprintf(st->pack_label, sizeof(st->pack_label), "%s", g_ctx.pack->id);
+	if (g_ctx.pack->ui_source_label && g_ctx.pack->ui_source_label[0])
+		snprintf(st->ui_source_label, sizeof(st->ui_source_label), "%s", g_ctx.pack->ui_source_label);
+	if (g_ctx.pack->ui_notes_label && g_ctx.pack->ui_notes_label[0])
+		snprintf(st->ui_notes_label, sizeof(st->ui_notes_label), "%s", g_ctx.pack->ui_notes_label);
+	if (g_ctx.pack->ui_transcript_label && g_ctx.pack->ui_transcript_label[0])
+		snprintf(st->ui_transcript_label, sizeof(st->ui_transcript_label), "%s", g_ctx.pack->ui_transcript_label);
+	if (g_ctx.pack->ui_deep_label && g_ctx.pack->ui_deep_label[0])
+		snprintf(st->ui_deep_label, sizeof(st->ui_deep_label), "%s", g_ctx.pack->ui_deep_label);
+}
+
+static void
 populate_template_options(scribe_ux_state_t *st)
 {
 	size_t n = scribe_registry_count(g_ctx.registry);
 	size_t i;
 
+	populate_pack_ui(st);
 	st->template_count = 0;
 	for (i = 0; i < n && st->template_count < SCRIBE_UX_MAX_TEMPLATES; i++) {
 		const scribe_template_t *tpl = scribe_registry_at(g_ctx.registry, i);
@@ -507,6 +541,11 @@ ux_state_to_flat_json(const scribe_ux_state_t *st)
 
 	json_object_object_add(o, "view", json_object_new_string(vname));
 	json_object_object_add(o, "flash", json_object_new_string(st->flash));
+	json_object_object_add(o, "pack_label", json_object_new_string(st->pack_label));
+	json_object_object_add(o, "ui_source_label", json_object_new_string(st->ui_source_label));
+	json_object_object_add(o, "ui_notes_label", json_object_new_string(st->ui_notes_label));
+	json_object_object_add(o, "ui_transcript_label", json_object_new_string(st->ui_transcript_label));
+	json_object_object_add(o, "ui_deep_label", json_object_new_string(st->ui_deep_label));
 	json_object_object_add(o, "entry_id", json_object_new_string(st->entry_id));
 	json_object_object_add(o, "page_id", json_object_new_string(st->page_id));
 	json_object_object_add(o, "book_ref", json_object_new_string(st->book_ref));
@@ -518,11 +557,13 @@ ux_state_to_flat_json(const scribe_ux_state_t *st)
 	json_object_object_add(o, "reviewed_by", json_object_new_string(st->reviewed_by));
 	json_object_object_add(o, "image_url", json_object_new_string(st->image_url));
 	json_object_object_add(o, "marginal_notes", json_object_new_string(st->marginal_notes));
+	json_object_object_add(o, "transcript", json_object_new_string(st->transcript));
 	json_object_object_add(o, "zoom_pct", json_object_new_int(st->zoom_pct));
 	json_object_object_add(o, "rotate_deg", json_object_new_int(st->rotate_deg));
 	json_object_object_add(o, "pan_x", json_object_new_int(st->pan_x));
 	json_object_object_add(o, "pan_y", json_object_new_int(st->pan_y));
 	json_object_object_add(o, "active_field", json_object_new_int(st->active_field));
+	json_object_object_add(o, "high_contrast", json_object_new_int(st->high_contrast ? 1 : 0));
 	json_object_object_add(o, "field_count", json_object_new_int((int)st->field_count));
 
 	for (i = 0; i < st->field_count; i++) {
@@ -535,10 +576,14 @@ ux_state_to_flat_json(const scribe_ux_state_t *st)
 		json_object_object_add(o, k, json_object_new_string(f->label));
 		snprintf(k, sizeof(k), "f%zu_type", i);
 		json_object_object_add(o, k, json_object_new_string(f->type));
+		snprintf(k, sizeof(k), "f%zu_hint", i);
+		json_object_object_add(o, k, json_object_new_string(f->format_hint));
 		snprintf(k, sizeof(k), "f%zu_req", i);
 		json_object_object_add(o, k, json_object_new_int(f->required ? 1 : 0));
 		snprintf(k, sizeof(k), "f%zu_raw", i);
 		json_object_object_add(o, k, json_object_new_string(f->raw_value));
+		snprintf(k, sizeof(k), "f%zu_alt", i);
+		json_object_object_add(o, k, json_object_new_string(f->alt_value));
 		snprintf(k, sizeof(k), "f%zu_ver", i);
 		json_object_object_add(o, k, json_object_new_string(f->verified_value));
 		snprintf(k, sizeof(k), "f%zu_flags", i);
@@ -615,6 +660,9 @@ entry_to_json(const scribe_entry_t *e, const scribe_page_t *p)
 	json_object_object_add(o, "reviewed_at", json_object_new_int64(e->reviewed_at));
 	json_object_object_add(o, "marginal_notes",
 	                       json_object_new_string(e->marginal_notes ? e->marginal_notes : ""));
+	if (e->transcript && e->transcript[0]) {
+		json_object_object_add(o, "transcript", json_object_new_string(e->transcript));
+	}
 	if (p) {
 		struct json_object *po = json_object_new_object();
 		char img_url[96];
@@ -638,6 +686,10 @@ entry_to_json(const scribe_entry_t *e, const scribe_page_t *p)
 		                       e->fields[i].raw_value
 		                       ? json_object_new_string(e->fields[i].raw_value)
 		                       : NULL);
+		if (e->fields[i].alt_value && e->fields[i].alt_value[0]) {
+			json_object_object_add(fo, "alt_value",
+			                       json_object_new_string(e->fields[i].alt_value));
+		}
 		json_object_object_add(fo, "verified_value",
 		                       e->fields[i].verified_value
 		                       ? json_object_new_string(e->fields[i].verified_value)
@@ -656,32 +708,53 @@ entry_to_json(const scribe_entry_t *e, const scribe_page_t *p)
 
 static int
 run_page_extraction(const scribe_page_t *page, const scribe_template_t *tpl,
+                    int deep_mode,
                     scribe_entry_t **out_entries, size_t *out_count)
 {
+	scribe_extract_opts_t opts;
+	memset(&opts, 0, sizeof(opts));
+	opts.pack = g_ctx.pack;
+
 	if (g_ctx.mock_response_count > 0) {
 		scribe_mock_extractor_t mctx;
-		const char *m2 = (g_ctx.mock_response_count >= 2)
-		                 ? (g_ctx.model_secondary[0] ? g_ctx.model_secondary : "mock-pass2")
-		                 : NULL;
+		opts.model_primary = g_ctx.model_primary[0] ? g_ctx.model_primary : "mock-pass1";
+		opts.model_secondary = (g_ctx.mock_response_count >= 2)
+		                       ? (g_ctx.model_secondary[0] ? g_ctx.model_secondary : "mock-pass2")
+		                       : NULL;
+		opts.model_escalate = (deep_mode || g_ctx.model_escalate[0])
+		                      ? (g_ctx.model_escalate[0] ? g_ctx.model_escalate : "mock-escalate")
+		                      : NULL;
+		opts.enhance_handwriting = (deep_mode || g_ctx.enhance_handwriting) ? 1 : 0;
 		mctx.responses = (const char *const *)g_ctx.mock_responses;
 		mctx.response_count = g_ctx.mock_response_count;
 		mctx.call_index = 0;
-		return scribe_extract_page(g_ctx.store, page, tpl,
-		                           scribe_extractor_mock(), &mctx,
-		                           g_ctx.model_primary[0] ? g_ctx.model_primary : "mock-pass1",
-		                           m2, out_entries, out_count);
+		return scribe_extract_page_ex(g_ctx.store, page, tpl,
+		                              scribe_extractor_mock(), &mctx,
+		                              &opts, out_entries, out_count);
 	} else {
 		scribe_auren_config_t acfg;
-		const char *m2 = g_ctx.model_secondary[0] ? g_ctx.model_secondary : NULL;
 		memset(&acfg, 0, sizeof(acfg));
 		acfg.host = g_ctx.auren_host;
 		acfg.port = g_ctx.auren_port;
 		acfg.endpoint = "/v1/chat/completions";
-		acfg.timeout_ms = 60000;
-		return scribe_extract_page(g_ctx.store, page, tpl,
-		                           scribe_extractor_auren(), &acfg,
-		                           g_ctx.model_primary, m2,
-		                           out_entries, out_count);
+		acfg.timeout_ms = g_ctx.timeout_ms > 0 ? g_ctx.timeout_ms : 180000;
+
+		opts.model_primary = g_ctx.model_primary;
+		opts.model_secondary = g_ctx.model_secondary[0] ? g_ctx.model_secondary : NULL;
+		opts.model_escalate = g_ctx.model_escalate[0] ? g_ctx.model_escalate : NULL;
+		opts.enhance_handwriting = g_ctx.enhance_handwriting;
+
+		if (deep_mode) {
+			const char *strong = g_ctx.model_escalate[0] ? g_ctx.model_escalate : "smart";
+			opts.enhance_handwriting = 1;
+			opts.model_escalate = strong;
+			if (!opts.model_secondary)
+				opts.model_primary = strong;
+		}
+
+		return scribe_extract_page_ex(g_ctx.store, page, tpl,
+		                              scribe_extractor_auren(), &acfg,
+		                              &opts, out_entries, out_count);
 	}
 }
 
@@ -1067,7 +1140,7 @@ handle_post_ingest(socket_t cfd, char *body)
 		json_object_array_add(jpages, po);
 
 		if (tpl && do_extract) {
-			if (run_page_extraction(&pages[pi], tpl, &entries, &entry_count) != 0) {
+			if (run_page_extraction(&pages[pi], tpl, 0, &entries, &entry_count) != 0) {
 				entries = NULL;
 				entry_count = 0;
 			}
@@ -1199,6 +1272,8 @@ handle_get_entry(socket_t cfd, char *body)
 	snprintf(st.image_url, sizeof(st.image_url), "/pages/%s/image", e.page_id);
 	if (e.marginal_notes)
 		snprintf(st.marginal_notes, sizeof(st.marginal_notes), "%s", e.marginal_notes);
+	if (e.transcript)
+		snprintf(st.transcript, sizeof(st.transcript), "%s", e.transcript);
 
 	year_hint = extract_entry_year(&e);
 	if (tpl) {
@@ -1213,10 +1288,14 @@ handle_get_entry(socket_t cfd, char *body)
 			         spec->label ? spec->label : spec->key);
 			snprintf(uf->type, sizeof(uf->type), "%s",
 			         scribe_field_type_str(spec->type));
+			if (spec->format_hint && spec->format_hint[0])
+				snprintf(uf->format_hint, sizeof(uf->format_hint), "%s", spec->format_hint);
 			uf->required = spec->required;
 			if (fv) {
 				if (fv->raw_value)
 					snprintf(uf->raw_value, sizeof(uf->raw_value), "%s", fv->raw_value);
+				if (fv->alt_value)
+					snprintf(uf->alt_value, sizeof(uf->alt_value), "%s", fv->alt_value);
 				if (fv->verified_value)
 					snprintf(uf->verified_value, sizeof(uf->verified_value), "%s",
 					         fv->verified_value);
@@ -1224,16 +1303,18 @@ handle_get_entry(socket_t cfd, char *body)
 				memcpy(uf->bbox, fv->bbox, sizeof(uf->bbox));
 			}
 
-			/* Populate read-only advisory suggestions for person/place fields */
-			if (g_ctx.dict &&
-			    (spec->type == SCRIBE_FIELD_PERSON || spec->type == SCRIBE_FIELD_PLACE)) {
+			/* Populate read-only advisory suggestions using dict_category or person/place */
+			if (g_ctx.dict) {
+				const char *cat = (spec->dict_category && spec->dict_category[0])
+				                  ? spec->dict_category
+				                  : (spec->type == SCRIBE_FIELD_PERSON || spec->type == SCRIBE_FIELD_PLACE)
+				                    ? scribe_field_type_str(spec->type)
+				                    : NULL;
 				const char *q = uf->verified_value[0] ? uf->verified_value : uf->raw_value;
-				if (q[0]) {
+				if (cat && q[0]) {
 					scribe_suggestion_t sugs[SCRIBE_UX_MAX_SUGGESTIONS];
-					size_t ns = scribe_dict_suggest(g_ctx.dict,
-					                                scribe_field_type_str(spec->type),
-					                                q, year_hint, sugs,
-					                                SCRIBE_UX_MAX_SUGGESTIONS);
+					size_t ns = scribe_dict_suggest(g_ctx.dict, cat, q, year_hint,
+					                                sugs, SCRIBE_UX_MAX_SUGGESTIONS);
 					size_t s;
 					for (s = 0; s < ns; s++) {
 						snprintf(uf->suggestions[s], sizeof(uf->suggestions[s]),
@@ -1256,6 +1337,8 @@ handle_get_entry(socket_t cfd, char *body)
 			snprintf(uf->type, sizeof(uf->type), "text");
 			if (fv->raw_value)
 				snprintf(uf->raw_value, sizeof(uf->raw_value), "%s", fv->raw_value);
+			if (fv->alt_value)
+				snprintf(uf->alt_value, sizeof(uf->alt_value), "%s", fv->alt_value);
 			if (fv->verified_value)
 				snprintf(uf->verified_value, sizeof(uf->verified_value), "%s",
 				         fv->verified_value);
@@ -1410,7 +1493,7 @@ handle_post_verify(socket_t cfd, char *body)
 	e.reviewed_at = (int64_t)time(NULL);
 
 	if (tpl)
-		scribe_validate_entry(tpl, &e);
+		scribe_validate_entry_ex(g_ctx.pack, tpl, &e);
 	for (i = 0; i < e.field_count; i++) {
 		if (e.fields[i].flags & SCRIBE_FLAG_INVALID)
 			any_invalid = 1;
@@ -1464,7 +1547,9 @@ handle_post_extract_entry(socket_t cfd, char *body)
 	char first_id[32] = "";
 	size_t i;
 
-	(void)body;
+	int deep = 0;
+
+	deep = axil_req_param_bool(cfd, body, "deep", 0);
 	if (axil_param(cfd, "id", id, sizeof(id)) <= 0) {
 		respond_error(cfd, 400, "missing entry id");
 		return 0;
@@ -1486,7 +1571,7 @@ handle_post_extract_entry(socket_t cfd, char *body)
 		return 0;
 	}
 
-	if (run_page_extraction(&page, tpl, &entries, &count) != 0) {
+	if (run_page_extraction(&page, tpl, deep, &entries, &count) != 0) {
 		respond_error(cfd, 502, "extraction backend failed");
 		return 0;
 	}
@@ -1915,74 +2000,97 @@ handle_get_transcript(socket_t cfd, char *body)
 	art = bud_element_lit("article");
 	bud_set_attr_lit(art, "class", "scribe-transcript");
 
-	h1 = bud_element_lit("h1");
-	bud_append(h1, bud_textf("Archival Transcript — %s (%s)",
-	                         (tpl && tpl->label) ? tpl->label : e.template_id,
-	                         e.id));
-	bud_append(art, h1);
-
-	dl = bud_element_lit("p");
-	bud_append(dl, bud_textf("Status: %s | Book: %s p.%u | Source SHA-256: %s | "
-	                         "Reviewed by: %s (%s)",
-	                         scribe_status_str(e.status),
-	                         have_page && p.book_ref[0] ? p.book_ref : "—",
-	                         have_page ? p.page_num : 0u,
-	                         have_page ? p.sha256 : "—",
-	                         e.reviewed_by[0] ? e.reviewed_by : "unreviewed",
-	                         ts));
-	bud_append(art, dl);
-
-	tbl = bud_element_lit("table");
-	bud_set_attr_lit(tbl, "class", "scribe-table");
-	thead = bud_element_lit("thead");
-	trh = bud_element_lit("tr");
 	{
-		static const char *const cols[] = { "Field", "Verified Value", "Raw OCR Value", "Flags" };
-		size_t c;
-		for (c = 0; c < 4; c++) {
-			bud_node *th = bud_element_lit("th");
-			bud_append(th, bud_text_lit(cols[c]));
-			bud_append(trh, th);
+		const char *print_title = (g_ctx.pack && g_ctx.pack->ui_print_title && g_ctx.pack->ui_print_title[0])
+		                          ? g_ctx.pack->ui_print_title : "Document Transcript";
+		const char *source_lbl = (g_ctx.pack && g_ctx.pack->ui_source_label && g_ctx.pack->ui_source_label[0])
+		                         ? g_ctx.pack->ui_source_label : "Source";
+		const char *trans_lbl = (g_ctx.pack && g_ctx.pack->ui_transcript_label && g_ctx.pack->ui_transcript_label[0])
+		                        ? g_ctx.pack->ui_transcript_label : "Full Transcript";
+		const char *notes_lbl = (g_ctx.pack && g_ctx.pack->ui_notes_label && g_ctx.pack->ui_notes_label[0])
+		                        ? g_ctx.pack->ui_notes_label : "Notes";
+
+		h1 = bud_element_lit("h1");
+		bud_append(h1, bud_textf("%s — %s (%s)",
+		                         print_title,
+		                         (tpl && tpl->label) ? tpl->label : e.template_id,
+		                         e.id));
+		bud_append(art, h1);
+
+		dl = bud_element_lit("p");
+		bud_append(dl, bud_textf("Status: %s | %s: %s p.%u | Source SHA-256: %s | "
+		                         "Reviewed by: %s (%s)",
+		                         scribe_status_str(e.status),
+		                         source_lbl,
+		                         have_page && p.book_ref[0] ? p.book_ref : "—",
+		                         have_page ? p.page_num : 0u,
+		                         have_page ? p.sha256 : "—",
+		                         e.reviewed_by[0] ? e.reviewed_by : "unreviewed",
+		                         ts));
+		bud_append(art, dl);
+
+		tbl = bud_element_lit("table");
+		bud_set_attr_lit(tbl, "class", "scribe-table");
+		thead = bud_element_lit("thead");
+		trh = bud_element_lit("tr");
+		{
+			static const char *const cols[] = { "Field", "Verified Value", "Raw OCR Value", "Flags" };
+			size_t c;
+			for (c = 0; c < 4; c++) {
+				bud_node *th = bud_element_lit("th");
+				bud_append(th, bud_text_lit(cols[c]));
+				bud_append(trh, th);
+			}
 		}
-	}
-	bud_append(thead, trh);
-	bud_append(tbl, thead);
+		bud_append(thead, trh);
+		bud_append(tbl, thead);
 
-	tbody = bud_element_lit("tbody");
-	for (i = 0; i < e.field_count; i++) {
-		const scribe_field_val_t *fv = &e.fields[i];
-		bud_node *tr = bud_element_lit("tr");
-		bud_node *td1 = bud_element_lit("td");
-		bud_node *td2 = bud_element_lit("td");
-		bud_node *td3 = bud_element_lit("td");
-		bud_node *td4 = bud_element_lit("td");
-		char fstr[64] = "";
+		tbody = bud_element_lit("tbody");
+		for (i = 0; i < e.field_count; i++) {
+			const scribe_field_val_t *fv = &e.fields[i];
+			bud_node *tr = bud_element_lit("tr");
+			bud_node *td1 = bud_element_lit("td");
+			bud_node *td2 = bud_element_lit("td");
+			bud_node *td3 = bud_element_lit("td");
+			bud_node *td4 = bud_element_lit("td");
+			char fstr[64] = "";
 
-		if (fv->flags & SCRIBE_FLAG_CONFLICT) strcat(fstr, "CONFLICT ");
-		if (fv->flags & SCRIBE_FLAG_ILLEGIBLE) strcat(fstr, "ILLEGIBLE ");
-		if (fv->flags & SCRIBE_FLAG_INVALID) strcat(fstr, "INVALID ");
-		if (fv->flags & SCRIBE_FLAG_EDITED) strcat(fstr, "EDITED ");
+			if (fv->flags & SCRIBE_FLAG_CONFLICT) strcat(fstr, "CONFLICT ");
+			if (fv->flags & SCRIBE_FLAG_ILLEGIBLE) strcat(fstr, "ILLEGIBLE ");
+			if (fv->flags & SCRIBE_FLAG_INVALID) strcat(fstr, "INVALID ");
+			if (fv->flags & SCRIBE_FLAG_EDITED) strcat(fstr, "EDITED ");
 
-		bud_append(td1, bud_text(fv->key));
-		bud_append(td2, bud_text(fv->verified_value ? fv->verified_value : "—"));
-		bud_append(td3, bud_text(fv->raw_value ? fv->raw_value : "—"));
-		bud_append(td4, bud_text(fstr[0] ? fstr : "ok"));
-		bud_append(tr, td1);
-		bud_append(tr, td2);
-		bud_append(tr, td3);
-		bud_append(tr, td4);
-		bud_append(tbody, tr);
-	}
-	bud_append(tbl, tbody);
-	bud_append(art, tbl);
+			bud_append(td1, bud_text(fv->key));
+			bud_append(td2, bud_text(fv->verified_value ? fv->verified_value : "—"));
+			bud_append(td3, bud_text(fv->raw_value ? fv->raw_value : "—"));
+			bud_append(td4, bud_text(fstr[0] ? fstr : "ok"));
+			bud_append(tr, td1);
+			bud_append(tr, td2);
+			bud_append(tr, td3);
+			bud_append(tr, td4);
+			bud_append(tbody, tr);
+		}
+		bud_append(tbl, tbody);
+		bud_append(art, tbl);
 
-	if (e.marginal_notes && e.marginal_notes[0]) {
-		bud_node *mh = bud_element_lit("h2");
-		bud_node *mp = bud_element_lit("p");
-		bud_append(mh, bud_text_lit("Marginal Notes"));
-		bud_append(mp, bud_text(e.marginal_notes));
-		bud_append(art, mh);
-		bud_append(art, mp);
+		if (e.transcript && e.transcript[0]) {
+			bud_node *th = bud_element_lit("h2");
+			bud_node *tp = bud_element_lit("pre");
+			bud_set_attr_lit(tp, "style", "white-space:pre-wrap;font-family:ui-serif,Georgia,serif;");
+			bud_append(th, bud_text(trans_lbl));
+			bud_append(tp, bud_text(e.transcript));
+			bud_append(art, th);
+			bud_append(art, tp);
+		}
+
+		if (e.marginal_notes && e.marginal_notes[0]) {
+			bud_node *mh = bud_element_lit("h2");
+			bud_node *mp = bud_element_lit("p");
+			bud_append(mh, bud_text(notes_lbl));
+			bud_append(mp, bud_text(e.marginal_notes));
+			bud_append(art, mh);
+			bud_append(art, mp);
+		}
 	}
 
 	{
@@ -2052,11 +2160,42 @@ handle_get_wasm(socket_t cfd, char *body)
 
 /* ── Module Lifecycle ──────────────────────────────────────────── */
 
+static void
+load_pack_dictionaries(const char *pack_dir)
+{
+	char ddir[512];
+	DIR *dir;
+	struct dirent *de;
+
+	if (!pack_dir || !pack_dir[0])
+		return;
+	snprintf(ddir, sizeof(ddir), "%s/dictionaries", pack_dir);
+	dir = opendir(ddir);
+	if (!dir)
+		return;
+	while ((de = readdir(dir)) != NULL) {
+		size_t nl = strlen(de->d_name);
+		char path[768];
+		if (nl <= 4 || strcmp(de->d_name + nl - 4, ".tsv") != 0)
+			continue;
+		if (!g_ctx.dict) {
+			g_ctx.dict = scribe_dict_open();
+			if (!g_ctx.dict)
+				break;
+		}
+		snprintf(path, sizeof(path), "%s/%s", ddir, de->d_name);
+		scribe_dict_load_tsv(g_ctx.dict, path);
+	}
+	closedir(dir);
+}
+
 int
 axil_scribe_init(const char *data_dir, const char *templates_dir,
                  const char *dict_path)
 {
 	const char *env;
+	const char *pack_env;
+	const char *tpl_env;
 
 	if (g_ctx.initialized)
 		return 0;
@@ -2066,11 +2205,26 @@ axil_scribe_init(const char *data_dir, const char *templates_dir,
 	snprintf(g_ctx.data_dir, sizeof(g_ctx.data_dir), "%s",
 	         (env && env[0]) ? env : (data_dir && data_dir[0]) ? data_dir : "./var/scribe");
 
-	env = getenv("SCRIBE_TEMPLATES_DIR");
-	snprintf(g_ctx.templates_dir, sizeof(g_ctx.templates_dir), "%s",
-	         (env && env[0]) ? env
-	         : (templates_dir && templates_dir[0]) ? templates_dir
-	         : "./templates");
+	pack_env = getenv("SCRIBE_PACK_DIR");
+	if (pack_env && pack_env[0]) {
+		g_ctx.pack = scribe_pack_load_dir(pack_env);
+		if (g_ctx.pack) {
+			snprintf(g_ctx.pack_dir, sizeof(g_ctx.pack_dir), "%s", pack_env);
+		} else {
+			fprintf(stderr, "axil-scribe: warning: failed to load pack from '%s'\n", pack_env);
+		}
+	}
+
+	tpl_env = getenv("SCRIBE_TEMPLATES_DIR");
+	if (tpl_env && tpl_env[0]) {
+		snprintf(g_ctx.templates_dir, sizeof(g_ctx.templates_dir), "%s", tpl_env);
+	} else if (templates_dir && templates_dir[0]) {
+		snprintf(g_ctx.templates_dir, sizeof(g_ctx.templates_dir), "%s", templates_dir);
+	} else if (g_ctx.pack_dir[0]) {
+		snprintf(g_ctx.templates_dir, sizeof(g_ctx.templates_dir), "%s/templates", g_ctx.pack_dir);
+	} else {
+		snprintf(g_ctx.templates_dir, sizeof(g_ctx.templates_dir), "./templates");
+	}
 
 	env = getenv("SCRIBE_WASM_PATH");
 	snprintf(g_ctx.wasm_path, sizeof(g_ctx.wasm_path), "%s",
@@ -2091,18 +2245,39 @@ axil_scribe_init(const char *data_dir, const char *templates_dir,
 	if (env && env[0])
 		snprintf(g_ctx.model_secondary, sizeof(g_ctx.model_secondary), "%s", env);
 
+	env = getenv("SCRIBE_ESCALATE_MODEL");
+	if (env && env[0])
+		snprintf(g_ctx.model_escalate, sizeof(g_ctx.model_escalate), "%s", env);
+
+	env = getenv("SCRIBE_ENHANCE");
+	if (env && env[0]) {
+		if (env[0] != '0' && env[0] != 'f' && env[0] != 'F')
+			g_ctx.enhance_handwriting = 1;
+	} else if (g_ctx.pack && g_ctx.pack->preprocess_preset == SCRIBE_PREPROC_HANDWRITING) {
+		g_ctx.enhance_handwriting = 1;
+	}
+
+	env = getenv("SCRIBE_TIMEOUT_MS");
+	g_ctx.timeout_ms = (env && env[0]) ? atoi(env) : 180000;
+	if (g_ctx.timeout_ms <= 0)
+		g_ctx.timeout_ms = 180000;
+
 	env = getenv("SCRIBE_MOCK_JSON");
 	if (env && env[0])
 		load_mock_json_config(env);
 
 	if (ensure_dir(g_ctx.data_dir) != 0) {
 		fprintf(stderr, "axil-scribe: cannot create data dir '%s'\n", g_ctx.data_dir);
+		scribe_pack_free(g_ctx.pack);
+		g_ctx.pack = NULL;
 		return -1;
 	}
 
 	g_ctx.store = scribe_store_open(g_ctx.data_dir);
 	if (!g_ctx.store) {
 		fprintf(stderr, "axil-scribe: failed to open store at '%s'\n", g_ctx.data_dir);
+		scribe_pack_free(g_ctx.pack);
+		g_ctx.pack = NULL;
 		return -1;
 	}
 
@@ -2110,6 +2285,8 @@ axil_scribe_init(const char *data_dir, const char *templates_dir,
 	if (!g_ctx.registry) {
 		scribe_store_close(g_ctx.store);
 		g_ctx.store = NULL;
+		scribe_pack_free(g_ctx.pack);
+		g_ctx.pack = NULL;
 		return -1;
 	}
 
@@ -2126,11 +2303,15 @@ axil_scribe_init(const char *data_dir, const char *templates_dir,
 			scribe_registry_load_dir(g_ctx.registry, "/usr/local/share/axil-scribe/templates");
 	}
 
+	if (g_ctx.pack_dir[0])
+		load_pack_dictionaries(g_ctx.pack_dir);
+
 	env = getenv("SCRIBE_DICT_PATH");
 	if (!env || !env[0])
 		env = dict_path;
 	if (env && env[0]) {
-		g_ctx.dict = scribe_dict_open();
+		if (!g_ctx.dict)
+			g_ctx.dict = scribe_dict_open();
 		if (g_ctx.dict)
 			scribe_dict_load_tsv(g_ctx.dict, env);
 	}
@@ -2158,6 +2339,10 @@ axil_scribe_cleanup(void)
 	if (g_ctx.dict) {
 		scribe_dict_close(g_ctx.dict);
 		g_ctx.dict = NULL;
+	}
+	if (g_ctx.pack) {
+		scribe_pack_free(g_ctx.pack);
+		g_ctx.pack = NULL;
 	}
 	for (i = 0; i < g_ctx.mock_response_count; i++) {
 		free(g_ctx.mock_responses[i]);
@@ -2192,7 +2377,8 @@ xy_install(void)
 
 	fprintf(stderr,
 	        "axil-scribe: mounted /queue, /ingest, /entries/:id, /pages/:id/image, "
-	        "/search, /export.{csv,json} (data=%s templates=%zu)\n",
+	        "/search, /export.{csv,json} (pack=%s data=%s templates=%zu)\n",
+	        (g_ctx.pack && g_ctx.pack->id) ? g_ctx.pack->id : "generic",
 	        g_ctx.data_dir, scribe_registry_count(g_ctx.registry));
 }
 

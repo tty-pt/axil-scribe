@@ -157,6 +157,7 @@ scribe_template_t *scribe_template_load_json(const char *json_str)
 	for (size_t i = 0; i < nfields; i++) {
 		struct json_object *jf = json_object_array_get_idx(jfields, i);
 		struct json_object *jk = NULL, *jl = NULL, *jt = NULL, *jr = NULL;
+		struct json_object *jd = NULL, *jfh = NULL, *je = NULL;
 
 		if (!jf || !json_object_is_type(jf, json_type_object) ||
 		    !json_object_object_get_ex(jf, "key", &jk) ||
@@ -204,10 +205,110 @@ scribe_template_t *scribe_template_load_json(const char *json_str)
 		    json_object_is_type(jr, json_type_boolean))
 			tpl->fields[i].required = json_object_get_boolean(jr) ? 1 : 0;
 
+		if (json_object_object_get_ex(jf, "dict_category", &jd) &&
+		    json_object_is_type(jd, json_type_string)) {
+			const char *ds = json_object_get_string(jd);
+			if (ds && ds[0])
+				tpl->fields[i].dict_category = dup_str(ds);
+		}
+
+		if (json_object_object_get_ex(jf, "format_hint", &jfh) &&
+		    json_object_is_type(jfh, json_type_string)) {
+			const char *fs = json_object_get_string(jfh);
+			if (fs && fs[0])
+				tpl->fields[i].format_hint = dup_str(fs);
+		}
+
+		if (json_object_object_get_ex(jf, "enum_values", &je) &&
+		    json_object_is_type(je, json_type_array)) {
+			size_t ne = json_object_array_length(je);
+			if (ne > 0) {
+				tpl->fields[i].enum_values = calloc(ne, sizeof(char *));
+				if (!tpl->fields[i].enum_values) {
+					scribe_template_free(tpl);
+					json_object_put(root);
+					return NULL;
+				}
+				size_t kept = 0;
+				for (size_t eidx = 0; eidx < ne; eidx++) {
+					struct json_object *jev = json_object_array_get_idx(je, eidx);
+					if (jev && json_object_is_type(jev, json_type_string)) {
+						const char *es = json_object_get_string(jev);
+						if (es && es[0])
+							tpl->fields[i].enum_values[kept++] = dup_str(es);
+					}
+				}
+				tpl->fields[i].enum_count = kept;
+			}
+		}
+
 		if (!tpl->fields[i].key || !tpl->fields[i].label) {
 			scribe_template_free(tpl);
 			json_object_put(root);
 			return NULL;
+		}
+	}
+
+	/* Optional declarative cross-field / range constraints */
+	struct json_object *jcons = NULL;
+	if (json_object_object_get_ex(root, "constraints", &jcons) &&
+	    json_object_is_type(jcons, json_type_array)) {
+		size_t ncons = json_object_array_length(jcons);
+		if (ncons > 0) {
+			tpl->constraints = calloc(ncons, sizeof(*tpl->constraints));
+			if (!tpl->constraints) {
+				scribe_template_free(tpl);
+				json_object_put(root);
+				return NULL;
+			}
+			size_t kept = 0;
+			for (size_t ci = 0; ci < ncons; ci++) {
+				struct json_object *jc = json_object_array_get_idx(jcons, ci);
+				struct json_object *jop = NULL, *jlhs = NULL, *jrhs = NULL;
+				struct json_object *jmin = NULL, *jmax = NULL;
+				if (!jc || !json_object_is_type(jc, json_type_object) ||
+				    !json_object_object_get_ex(jc, "op", &jop) ||
+				    !json_object_is_type(jop, json_type_string))
+					continue;
+				const char *op_s = json_object_get_string(jop);
+				scribe_constraint_t *c = &tpl->constraints[kept];
+				if (strcmp(op_s, "date_le") == 0) {
+					c->op = SCRIBE_CONSTRAINT_DATE_LE;
+				} else if (strcmp(op_s, "num_le") == 0) {
+					c->op = SCRIBE_CONSTRAINT_NUM_LE;
+				} else if (strcmp(op_s, "date_range") == 0) {
+					c->op = SCRIBE_CONSTRAINT_DATE_RANGE;
+				} else {
+					continue;
+				}
+				if (json_object_object_get_ex(jc, "lhs", &jlhs) &&
+				    json_object_is_type(jlhs, json_type_string))
+					c->lhs = dup_str(json_object_get_string(jlhs));
+				else if (json_object_object_get_ex(jc, "field", &jlhs) &&
+				         json_object_is_type(jlhs, json_type_string))
+					c->lhs = dup_str(json_object_get_string(jlhs));
+
+				if (json_object_object_get_ex(jc, "rhs", &jrhs) &&
+				    json_object_is_type(jrhs, json_type_string))
+					c->rhs = dup_str(json_object_get_string(jrhs));
+				if (json_object_object_get_ex(jc, "min_year", &jmin) &&
+				    json_object_is_type(jmin, json_type_int))
+					c->min_year = json_object_get_int(jmin);
+				if (json_object_object_get_ex(jc, "max_year", &jmax) &&
+				    json_object_is_type(jmax, json_type_int))
+					c->max_year = json_object_get_int(jmax);
+
+				if (!c->lhs ||
+				    ((c->op == SCRIBE_CONSTRAINT_DATE_LE ||
+				      c->op == SCRIBE_CONSTRAINT_NUM_LE) && !c->rhs)) {
+					free(c->lhs);
+					free(c->rhs);
+					memset(c, 0, sizeof(*c));
+					continue;
+				}
+				kept++;
+			}
+			tpl->constraint_count = kept;
 		}
 	}
 
@@ -243,11 +344,148 @@ void scribe_template_free(scribe_template_t *tpl)
 		for (size_t i = 0; i < tpl->field_count; i++) {
 			free(tpl->fields[i].key);
 			free(tpl->fields[i].label);
+			free(tpl->fields[i].dict_category);
+			free(tpl->fields[i].format_hint);
+			if (tpl->fields[i].enum_values) {
+				for (size_t e = 0; e < tpl->fields[i].enum_count; e++)
+					free(tpl->fields[i].enum_values[e]);
+				free(tpl->fields[i].enum_values);
+			}
 		}
 		free(tpl->fields);
 	}
+	if (tpl->constraints) {
+		for (size_t i = 0; i < tpl->constraint_count; i++) {
+			free(tpl->constraints[i].lhs);
+			free(tpl->constraints[i].rhs);
+		}
+		free(tpl->constraints);
+	}
 	free(tpl->hyle_defs);
 	free(tpl);
+}
+
+/* ── Domain Pack Loader ────────────────────────────────────────── */
+
+static char *json_dup_opt_str(struct json_object *obj, const char *key)
+{
+	struct json_object *jv = NULL;
+	if (!obj || !json_object_object_get_ex(obj, key, &jv) ||
+	    !json_object_is_type(jv, json_type_string))
+		return NULL;
+	const char *s = json_object_get_string(jv);
+	return (s && s[0]) ? dup_str(s) : NULL;
+}
+
+scribe_pack_t *scribe_pack_load_json(const char *json_str)
+{
+	if (!json_str)
+		return NULL;
+	struct json_object *root = json_tokener_parse(json_str);
+	if (!root || !json_object_is_type(root, json_type_object)) {
+		if (root)
+			json_object_put(root);
+		return NULL;
+	}
+
+	char *id = json_dup_opt_str(root, "id");
+	if (!id) {
+		json_object_put(root);
+		return NULL;
+	}
+
+	scribe_pack_t *pack = calloc(1, sizeof(*pack));
+	if (!pack) {
+		free(id);
+		json_object_put(root);
+		return NULL;
+	}
+
+	pack->id = id;
+	pack->label = json_dup_opt_str(root, "label");
+	if (!pack->label)
+		pack->label = dup_str(id);
+	pack->system_persona = json_dup_opt_str(root, "system_persona");
+	pack->extraction_guide = json_dup_opt_str(root, "extraction_guide");
+	pack->uncertainty_markers = json_dup_opt_str(root, "uncertainty_markers");
+
+	struct json_object *jv = NULL;
+	if (json_object_object_get_ex(root, "preprocess_preset", &jv) &&
+	    json_object_is_type(jv, json_type_string)) {
+		scribe_preproc_preset_t pre = SCRIBE_PREPROC_NONE;
+		if (scribe_preproc_preset_parse(json_object_get_string(jv), &pre) == 0)
+			pack->preprocess_preset = pre;
+	}
+	if (json_object_object_get_ex(root, "transcript_first", &jv)) {
+		if (json_object_is_type(jv, json_type_boolean))
+			pack->transcript_first = json_object_get_boolean(jv) ? 1 : 0;
+		else if (json_object_is_type(jv, json_type_int))
+			pack->transcript_first = json_object_get_int(jv) ? 1 : 0;
+	}
+	if (json_object_object_get_ex(root, "min_year", &jv) &&
+	    json_object_is_type(jv, json_type_int))
+		pack->min_year = json_object_get_int(jv);
+	if (json_object_object_get_ex(root, "max_year", &jv) &&
+	    json_object_is_type(jv, json_type_int))
+		pack->max_year = json_object_get_int(jv);
+
+	struct json_object *jui = NULL;
+	if (json_object_object_get_ex(root, "ui", &jui) &&
+	    json_object_is_type(jui, json_type_object)) {
+		pack->ui_source_label = json_dup_opt_str(jui, "source_label");
+		pack->ui_notes_label = json_dup_opt_str(jui, "notes_label");
+		pack->ui_transcript_label = json_dup_opt_str(jui, "transcript_label");
+		pack->ui_deep_label = json_dup_opt_str(jui, "deep_label");
+		pack->ui_print_title = json_dup_opt_str(jui, "print_title");
+	}
+
+	json_object_put(root);
+	return pack;
+}
+
+scribe_pack_t *scribe_pack_load_file(const char *path)
+{
+	if (!path)
+		return NULL;
+	char *text = read_entire_file(path);
+	if (!text)
+		return NULL;
+	scribe_pack_t *pack = scribe_pack_load_json(text);
+	free(text);
+	return pack;
+}
+
+scribe_pack_t *scribe_pack_load_dir(const char *pack_dir)
+{
+	if (!pack_dir || !pack_dir[0])
+		return NULL;
+	char path[512];
+	int n = snprintf(path, sizeof(path), "%s/pack.json", pack_dir);
+	if (n <= 0 || (size_t)n >= sizeof(path))
+		return NULL;
+	scribe_pack_t *pack = scribe_pack_load_file(path);
+	if (!pack)
+		return NULL;
+	pack->base_dir = dup_str(pack_dir);
+	return pack;
+}
+
+void scribe_pack_free(scribe_pack_t *pack)
+{
+	if (!pack)
+		return;
+	free(pack->id);
+	free(pack->label);
+	free(pack->base_dir);
+	free(pack->system_persona);
+	free(pack->extraction_guide);
+	free(pack->uncertainty_markers);
+	free(pack->ui_source_label);
+	free(pack->ui_notes_label);
+	free(pack->ui_transcript_label);
+	free(pack->ui_deep_label);
+	free(pack->ui_print_title);
+	free(pack);
 }
 
 scribe_registry_t *scribe_registry_open(void)

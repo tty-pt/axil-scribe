@@ -1,0 +1,21 @@
+{
+  "id": "invoice_starter",
+  "label": "Invoice / Receipt (Starter)",
+  "version": 1,
+  "prompt_hint": "Extract invoice header and financial totals verbatim. Format all dates as YYYY-MM-DD and monetary amounts as decimal numbers without currency symbols.",
+  "fields": [
+    { "key": "vendor_name", "label": "Vendor / Supplier", "type": "text", "required": true, "dict_category": "vendor" },
+    { "key": "invoice_number", "label": "Invoice Number", "type": "code", "required": true, "format_hint": "e.g. INV-2026-0042" },
+    { "key": "issue_date", "label": "Issue Date", "type": "date", "required": true, "format_hint": "YYYY-MM-DD" },
+    { "key": "due_date", "label": "Due Date", "type": "date", "required": false, "format_hint": "YYYY-MM-DD" },
+    { "key": "currency", "label": "Currency", "type": "enum", "required": true, "enum_values": ["EUR", "USD", "GBP", "BRL", "CHF"] },
+    { "key": "subtotal", "label": "Subtotal", "type": "currency", "required": false, "format_hint": "0.00" },
+    { "key": "tax_amount", "label": "Tax / VAT", "type": "currency", "required": false, "format_hint": "0.00" },
+    { "key": "total_amount", "label": "Total Amount", "type": "currency", "required": true, "format_hint": "0.00" },
+    { "key": "line_items_count", "label": "Line Items Count", "type": "number", "required": false, "format_hint": "integer" }
+  ],
+  "constraints": [
+    { "op": "date_le", "lhs": "issue_date", "rhs": "due_date" },
+    { "op": "num_le", "lhs": "subtotal", "rhs": "total_amount" }
+  ]
+}

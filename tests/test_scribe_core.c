@@ -377,6 +377,139 @@ static void test_pdf_multipage_ingest(void)
 	printf("[PASS] test_pdf_multipage_ingest\n");
 }
 
+static void test_transcript_and_alt_value_persistence(void)
+{
+	char tmpdir[] = "/tmp/scribe-paleo-test-XXXXXX";
+	assert(mkdtemp(tmpdir) != NULL);
+
+	scribe_store_t *store = scribe_store_open(tmpdir);
+	assert(store != NULL);
+
+	uint8_t png[32] = {
+		0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A,
+		0x00, 0x00, 0x00, 0x0D, 'I', 'H', 'D', 'R',
+		0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x40,
+		0x08, 0x02, 0x00, 0x00, 0x00, 0x44, 0x55, 0x66
+	};
+	scribe_page_t page;
+	int dedup = 0;
+	assert(scribe_ingest_buffer(store, png, sizeof(png), "Livro-1827", 1, &page, &dedup) == 0);
+
+	scribe_entry_t e;
+	scribe_entry_init(&e);
+	snprintf(e.page_id, sizeof(e.page_id), "%s", page.id);
+	snprintf(e.template_id, sizeof(e.template_id), "baptism_starter");
+	e.status = SCRIBE_STATUS_NEEDS_REVIEW;
+	assert(scribe_entry_set_transcript(&e,
+		"Aos doze dias do mez de Março de 1827 baptizei Eugenio na Sé de Lisboa.") == 0);
+	assert(scribe_entry_set_field(&e, "godparents", "Frederico Ricardo de Gois", NULL,
+		SCRIBE_FLAG_CONFLICT, NULL) == 0);
+	assert(scribe_entry_set_field_alt(&e, "godparents", "Frederico Mauricio de Sousa") == 0);
+	assert(scribe_entry_put(store, &e) == 0);
+
+	char saved_id[32];
+	snprintf(saved_id, sizeof(saved_id), "%s", e.id);
+	scribe_entry_free(&e);
+
+	/* Reopen store and confirm transcript + alt_value + liblemma index survive */
+	scribe_store_close(store);
+	store = scribe_store_open(tmpdir);
+	assert(store != NULL);
+
+	scribe_entry_t got;
+	assert(scribe_entry_get(store, saved_id, &got) == 0);
+	assert(got.transcript && strstr(got.transcript, "Março") != NULL);
+	const scribe_field_val_t *fg = scribe_entry_get_field(&got, "godparents");
+	assert(fg && fg->raw_value && strcmp(fg->raw_value, "Frederico Ricardo de Gois") == 0);
+	assert(fg->alt_value && strcmp(fg->alt_value, "Frederico Mauricio de Sousa") == 0);
+	scribe_entry_free(&got);
+
+	/* Search inside diplomatic transcript (exact and folded) */
+	scribe_id_list_t hits;
+	assert(scribe_search(store, "transcript", "Março", SCRIBE_SEARCH_EXACT, &hits) == 0);
+	assert(hits.count == 1 && strcmp(hits.ids[0], saved_id) == 0);
+	scribe_id_list_free(&hits);
+
+	assert(scribe_search(store, "transcript", "Marco", SCRIBE_SEARCH_EXACT, &hits) == 0);
+	assert(hits.count == 0);
+	scribe_id_list_free(&hits);
+
+	assert(scribe_search(store, "transcript", "Marco", SCRIBE_SEARCH_FOLDED, &hits) == 0);
+	assert(hits.count == 1 && strcmp(hits.ids[0], saved_id) == 0);
+	scribe_id_list_free(&hits);
+
+	scribe_store_close(store);
+	rm_rf(tmpdir);
+	printf("[PASS] test_transcript_and_alt_value_persistence\n");
+}
+
+static void test_packs_and_declarative_constraints(void)
+{
+	/* 1. Generic pack + invoice_starter template */
+	scribe_pack_t *gpack = scribe_pack_load_dir("packs/generic");
+	assert(gpack != NULL);
+	assert(strcmp(gpack->id, "generic") == 0);
+	assert(strcmp(gpack->label, "Generic Document Pack") == 0);
+	assert(gpack->preprocess_preset == SCRIBE_PREPROC_DOCUMENT);
+	assert(gpack->transcript_first == 0);
+	assert(gpack->min_year == 1900 && gpack->max_year == 2100);
+	assert(gpack->ui_source_label && strcmp(gpack->ui_source_label, "Source Ref") == 0);
+	assert(gpack->ui_deep_label && strcmp(gpack->ui_deep_label, "Deep Re-Extract") == 0);
+
+	scribe_registry_t *greg = scribe_registry_open();
+	assert(greg != NULL);
+	assert(scribe_registry_load_dir(greg, "packs/generic/templates") == 2);
+	const scribe_template_t *inv = scribe_registry_find(greg, "invoice_starter");
+	assert(inv != NULL);
+	assert(inv->field_count == 9);
+	assert(inv->fields[0].dict_category && strcmp(inv->fields[0].dict_category, "vendor") == 0);
+	assert(inv->fields[1].type == SCRIBE_FIELD_CODE);
+	assert(inv->fields[1].format_hint && strstr(inv->fields[1].format_hint, "INV-") != NULL);
+	assert(inv->fields[4].type == SCRIBE_FIELD_ENUM);
+	assert(inv->fields[4].enum_count == 5 && strcmp(inv->fields[4].enum_values[0], "EUR") == 0);
+	assert(inv->fields[5].type == SCRIBE_FIELD_CURRENCY);
+	assert(inv->fields[8].type == SCRIBE_FIELD_NUMBER);
+	assert(inv->constraint_count == 2);
+	assert(inv->constraints[0].op == SCRIBE_CONSTRAINT_DATE_LE);
+	assert(strcmp(inv->constraints[0].lhs, "issue_date") == 0);
+	assert(strcmp(inv->constraints[0].rhs, "due_date") == 0);
+	assert(inv->constraints[1].op == SCRIBE_CONSTRAINT_NUM_LE);
+	assert(strcmp(inv->constraints[1].lhs, "subtotal") == 0);
+	assert(strcmp(inv->constraints[1].rhs, "total_amount") == 0);
+	scribe_registry_close(greg);
+	scribe_pack_free(gpack);
+
+	/* 2. Portuguese archival handwriting pack + dictionary */
+	scribe_pack_t *ptpack = scribe_pack_load_dir("packs/pt-archival-handwriting");
+	assert(ptpack != NULL);
+	assert(strcmp(ptpack->id, "pt-archival-handwriting") == 0);
+	assert(ptpack->preprocess_preset == SCRIBE_PREPROC_HANDWRITING);
+	assert(ptpack->transcript_first == 1);
+	assert(ptpack->min_year == 1500 && ptpack->max_year == 2100);
+	assert(ptpack->ui_deep_label && strcmp(ptpack->ui_deep_label, "Deep Paleography") == 0);
+	assert(ptpack->ui_print_title && strcmp(ptpack->ui_print_title, "Archival Transcript") == 0);
+	assert(ptpack->system_persona && strstr(ptpack->system_persona, "paleographer") != NULL);
+
+	scribe_registry_t *ptreg = scribe_registry_open();
+	assert(ptreg != NULL);
+	assert(scribe_registry_load_dir(ptreg, "packs/pt-archival-handwriting/templates") == 3);
+	const scribe_template_t *bap = scribe_registry_find(ptreg, "baptism_starter");
+	assert(bap != NULL && bap->constraint_count == 1);
+	assert(bap->constraints[0].op == SCRIBE_CONSTRAINT_DATE_LE);
+	scribe_registry_close(ptreg);
+
+	scribe_dict_t *dict = scribe_dict_open();
+	assert(dict != NULL);
+	assert(scribe_dict_load_tsv(dict, "packs/pt-archival-handwriting/dictionaries/pt_ecclesiastical.tsv") > 20);
+	scribe_suggestion_t sugs[4];
+	size_t ns = scribe_dict_suggest(dict, "place", "Sao Joao", 1850, sugs, 4);
+	assert(ns >= 1 && strcmp(sugs[0].canonical, "São João") == 0);
+	scribe_dict_close(dict);
+	scribe_pack_free(ptpack);
+
+	printf("[PASS] test_packs_and_declarative_constraints\n");
+}
+
 int main(void)
 {
 	assert(strcmp(scribe_version(), SCRIBE_VERSION) == 0);
@@ -385,6 +518,8 @@ int main(void)
 	test_image_sniff_and_exif();
 	test_ingest_crud_audit_search_and_persistence();
 	test_pdf_multipage_ingest();
+	test_transcript_and_alt_value_persistence();
+	test_packs_and_declarative_constraints();
 	printf("ALL SCRIBE CORE TESTS PASSED\n");
 	return 0;
 }

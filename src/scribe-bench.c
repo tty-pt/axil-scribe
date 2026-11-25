@@ -74,24 +74,33 @@ static int cmp_str(const void *a, const void *b)
 static void usage(const char *prog)
 {
 	fprintf(stderr,
-		"Usage: %s --fixtures <dir> [--templates <dir>] [--backend mock|auren]\n"
-		"          [--model <name>] [--model2 <name>] [--host <host>] [--port <port>]\n",
+		"Usage: %s --fixtures <dir> [--pack <dir>] [--templates <dir>] [--backend mock|auren]\n"
+		"          [--model <name>] [--model2 <name>] [--escalate <name>]\n"
+		"          [--enhance] [--verbose] [--host <host>] [--port <port>]\n",
 		prog);
 }
 
 int main(int argc, char **argv)
 {
 	const char *fixtures_dir = NULL;
-	const char *templates_dir = "templates";
+	const char *pack_dir = NULL;
+	const char *templates_dir = NULL;
 	const char *backend = "mock";
 	const char *model = "chat";
 	const char *model2 = NULL;
+	const char *escalate = NULL;
 	const char *host = "127.0.0.1";
 	uint16_t port = 4242;
+	int enhance = 0;
+	int verbose = 0;
+	char pack_tpl_buf[512];
+	scribe_pack_t *pack = NULL;
 
 	for (int i = 1; i < argc; i++) {
 		if (strcmp(argv[i], "--fixtures") == 0 && i + 1 < argc)
 			fixtures_dir = argv[++i];
+		else if (strcmp(argv[i], "--pack") == 0 && i + 1 < argc)
+			pack_dir = argv[++i];
 		else if (strcmp(argv[i], "--templates") == 0 && i + 1 < argc)
 			templates_dir = argv[++i];
 		else if (strcmp(argv[i], "--backend") == 0 && i + 1 < argc)
@@ -100,6 +109,12 @@ int main(int argc, char **argv)
 			model = argv[++i];
 		else if (strcmp(argv[i], "--model2") == 0 && i + 1 < argc)
 			model2 = argv[++i];
+		else if (strcmp(argv[i], "--escalate") == 0 && i + 1 < argc)
+			escalate = argv[++i];
+		else if (strcmp(argv[i], "--enhance") == 0)
+			enhance = 1;
+		else if (strcmp(argv[i], "--verbose") == 0)
+			verbose = 1;
 		else if (strcmp(argv[i], "--host") == 0 && i + 1 < argc)
 			host = argv[++i];
 		else if (strcmp(argv[i], "--port") == 0 && i + 1 < argc)
@@ -115,10 +130,25 @@ int main(int argc, char **argv)
 		return 2;
 	}
 
+	if (pack_dir) {
+		pack = scribe_pack_load_dir(pack_dir);
+		if (!pack) {
+			fprintf(stderr, "scribe-bench: failed to load pack from %s\n", pack_dir);
+			return 1;
+		}
+		if (!templates_dir) {
+			snprintf(pack_tpl_buf, sizeof(pack_tpl_buf), "%s/templates", pack_dir);
+			templates_dir = pack_tpl_buf;
+		}
+	}
+	if (!templates_dir)
+		templates_dir = "templates";
+
 	scribe_registry_t *reg = scribe_registry_open();
 	if (!reg || scribe_registry_load_dir(reg, templates_dir) <= 0) {
 		fprintf(stderr, "scribe-bench: failed to load templates from %s\n", templates_dir);
 		scribe_registry_close(reg);
+		scribe_pack_free(pack);
 		return 1;
 	}
 
@@ -126,6 +156,7 @@ int main(int argc, char **argv)
 	if (!dir) {
 		fprintf(stderr, "scribe-bench: cannot open fixtures dir %s\n", fixtures_dir);
 		scribe_registry_close(reg);
+		scribe_pack_free(pack);
 		return 1;
 	}
 
@@ -156,6 +187,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "scribe-bench: no *.truth.json files found in %s\n", fixtures_dir);
 		free(truth_files);
 		scribe_registry_close(reg);
+		scribe_pack_free(pack);
 		return 1;
 	}
 	qsort(truth_files, n_truth, sizeof(*truth_files), cmp_str);
@@ -163,11 +195,15 @@ int main(int argc, char **argv)
 	char tmpdir[] = "/tmp/scribe-bench-XXXXXX";
 	if (!mkdtemp(tmpdir)) {
 		fprintf(stderr, "scribe-bench: mkdtemp failed\n");
+		scribe_registry_close(reg);
+		scribe_pack_free(pack);
 		return 1;
 	}
 	scribe_store_t *store = scribe_store_open(tmpdir);
 	if (!store) {
 		rm_rf(tmpdir);
+		scribe_registry_close(reg);
+		scribe_pack_free(pack);
 		return 1;
 	}
 
@@ -175,14 +211,27 @@ int main(int argc, char **argv)
 		.host = host,
 		.port = port,
 		.endpoint = "/v1/chat/completions",
-		.timeout_ms = 120000,
+		.timeout_ms = 180000,
+	};
+
+	scribe_extract_opts_t opts = {
+		.model_primary = model,
+		.model_secondary = model2,
+		.model_escalate = escalate,
+		.enhance_handwriting = enhance,
+		.pack = pack,
 	};
 
 	scribe_bench_metrics_t total = { 0 };
 	int failures = 0;
 
-	printf("scribe-bench | backend=%s | model=%s%s%s | docs=%zu\n",
-	       backend, model, model2 ? " + " : "", model2 ? model2 : "", n_truth);
+	printf("scribe-bench | pack=%s | backend=%s | model=%s%s%s%s%s%s | docs=%zu\n",
+	       (pack && pack->id) ? pack->id : "generic",
+	       backend, model,
+	       model2 ? " + " : "", model2 ? model2 : "",
+	       escalate ? " -> " : "", escalate ? escalate : "",
+	       enhance ? " [enhance]" : "",
+	       n_truth);
 	printf("------------------------------------------------------------------------\n");
 
 	for (size_t i = 0; i < n_truth; i++) {
@@ -246,10 +295,10 @@ int main(int argc, char **argv)
 
 		const scribe_extractor_ops_t *ops = NULL;
 		void *ectx = NULL;
-		const char *mock_resps[2] = { truth_text, truth_text };
+		const char *mock_resps[3] = { truth_text, truth_text, truth_text };
 		scribe_mock_extractor_t mock = {
 			.responses = mock_resps,
-			.response_count = 2,
+			.response_count = 3,
 			.call_index = 0,
 		};
 
@@ -264,15 +313,36 @@ int main(int argc, char **argv)
 		scribe_entry_t *pred_entries = NULL;
 		size_t n_pred = 0;
 		scribe_bench_metrics_t doc_m = { 0 };
-		if (scribe_extract_page(store, &pages[0], tpl, ops, ectx,
-		                        model, model2, &pred_entries, &n_pred) == 0) {
+		if (scribe_extract_page_ex(store, &pages[0], tpl, ops, ectx,
+		                           &opts, &pred_entries, &n_pred) == 0) {
 			scribe_bench_score_entries(tpl, pred_entries, n_pred,
 			                           truth_entries, n_truth_entries, &doc_m);
 			scribe_bench_score_entries(tpl, pred_entries, n_pred,
 			                           truth_entries, n_truth_entries, &total);
-			printf("  %-30s tpl=%-20s exact=%zu/%zu flagged=%zu silent_err=%zu\n",
+			printf("  %-34s tpl=%-16s exact=%zu/%zu flagged=%zu silent_err=%zu\n",
 			       img_name, tpl_id, doc_m.exact_matches, doc_m.fields_total,
 			       doc_m.flagged_fields, doc_m.silent_errors);
+			if (verbose) {
+				for (size_t e = 0; e < n_truth_entries; e++) {
+					const scribe_entry_t *te = &truth_entries[e];
+					const scribe_entry_t *pe = (e < n_pred) ? &pred_entries[e] : NULL;
+					for (size_t k = 0; k < tpl->field_count; k++) {
+						const char *key = tpl->fields[k].key;
+						const scribe_field_val_t *tf = scribe_entry_get_field(te, key);
+						const scribe_field_val_t *pf = pe ? scribe_entry_get_field(pe, key) : NULL;
+						const char *tv = (tf && tf->raw_value) ? tf->raw_value : "<null>";
+						const char *pv = (pf && pf->raw_value) ? pf->raw_value : "<null>";
+						const char *av = (pf && pf->alt_value) ? pf->alt_value : NULL;
+						uint32_t fl = pf ? pf->flags : 0u;
+						if (strcmp(tv, pv) != 0 || fl != 0u) {
+							printf("      %-20s truth=%-32s pred=%-32s%s%s flags=0x%x\n",
+							       key, tv, pv,
+							       av ? " alt=" : "", av ? av : "",
+							       fl);
+						}
+					}
+				}
+			}
 			for (size_t k = 0; k < n_pred; k++)
 				scribe_entry_free(&pred_entries[k]);
 			free(pred_entries);
@@ -309,5 +379,6 @@ int main(int argc, char **argv)
 	scribe_store_close(store);
 	rm_rf(tmpdir);
 	scribe_registry_close(reg);
+	scribe_pack_free(pack);
 	return failures ? 1 : 0;
 }

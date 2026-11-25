@@ -368,6 +368,164 @@ static void test_benchmark_scoring(void)
 	printf("[PASS] test_benchmark_scoring\n");
 }
 
+static void test_paleography_uncertain_markers_and_escalation(void)
+{
+	assert(scribe_has_uncertain_marker("Frederico [?] de Gois") == 1);
+	assert(scribe_has_uncertain_marker("O Prior [ilegível]") == 1);
+	assert(scribe_has_uncertain_marker("Maria [Illegible]") == 1);
+	assert(scribe_has_uncertain_marker("D. Maria Joaquina") == 0);
+	assert(scribe_has_uncertain_marker(NULL) == 0);
+
+	char tmpdir[] = "/tmp/scribe-esc-XXXXXX";
+	assert(mkdtemp(tmpdir) != NULL);
+	scribe_store_t *store = scribe_store_open(tmpdir);
+	assert(store != NULL);
+	scribe_template_t *tpl = scribe_template_load_file("templates/baptism_starter.json");
+	assert(tpl != NULL);
+
+	uint8_t png[32] = {
+		0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A,
+		0x00, 0x00, 0x00, 0x0D, 'I', 'H', 'D', 'R',
+		0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00,
+		0x08, 0x02, 0x00, 0x00, 0x00, 0x99, 0x88, 0x77
+	};
+	scribe_page_t page;
+	int dedup = 0;
+	assert(scribe_ingest_buffer(store, png, sizeof(png), "Lisboa-1827", 1, &page, &dedup) == 0);
+
+	/* Pass 1: godparents conflicted vs Pass 2, officiant contains [?] uncertainty marker. */
+	const char *pass1 =
+		"{\"entries\":[{\"transcript\":\"Aos doze dias do mes de Marco de 1827...\","
+		"\"fields\":{\"person_name\":\"Eugenio\",\"baptism_date\":\"1827-03-12\","
+		"\"parish\":\"S. João da Praça\",\"mother_name\":\"D. Maria Joaquina\","
+		"\"godparents\":\"Frederico Ricardo\",\"officiant\":\"O Prior Antonio de [?]\"},"
+		"\"bbox\":{\"godparents\":[0.1,0.6,0.7,0.1],\"officiant\":[0.3,0.8,0.4,0.1]}}]}";
+	const char *pass2 =
+		"{\"entries\":[{\"fields\":{\"person_name\":\"Eugenio\",\"baptism_date\":\"1827-03-12\","
+		"\"parish\":\"S. João da Praça\",\"mother_name\":\"D. Maria Joaquina\","
+		"\"godparents\":\"Frederico Mauricio\",\"officiant\":\"O Prior Antonio de [?]\"}}]}";
+	const char *arb =
+		"{\"fields\":{\"godparents\":\"Frederico Ricardo de Gois\","
+		"\"officiant\":\"O Prior Antonio de Padua\"}}";
+
+	const char *resps[3] = { pass1, pass2, arb };
+	scribe_mock_extractor_t mock = {
+		.responses = resps,
+		.response_count = 3,
+		.call_index = 0,
+	};
+	scribe_extract_opts_t opts = {
+		.model_primary = "mock-fast",
+		.model_secondary = "mock-vfast",
+		.model_escalate = "mock-smart",
+		.enhance_handwriting = 0,
+	};
+
+	scribe_entry_t *entries = NULL;
+	size_t count = 0;
+	assert(scribe_extract_page_ex(store, &page, tpl, scribe_extractor_mock(), &mock,
+	                              &opts, &entries, &count) == 0);
+	assert(count == 1);
+	assert(mock.call_index == 3); /* pass1 + pass2 + arbitration */
+	assert(entries[0].transcript && strstr(entries[0].transcript, "1827") != NULL);
+	assert(strstr(entries[0].extractor_model, "mock-smart") != NULL);
+
+	const scribe_field_val_t *fg = scribe_entry_get_field(&entries[0], "godparents");
+	assert(fg && fg->raw_value && strcmp(fg->raw_value, "Frederico Ricardo de Gois") == 0);
+	assert(fg->alt_value && strcmp(fg->alt_value, "Frederico Mauricio") == 0);
+	assert((fg->flags & SCRIBE_FLAG_CONFLICT) != 0);
+	assert((fg->flags & SCRIBE_FLAG_ILLEGIBLE) == 0);
+
+	const scribe_field_val_t *fo = scribe_entry_get_field(&entries[0], "officiant");
+	assert(fo && fo->raw_value && strcmp(fo->raw_value, "O Prior Antonio de Padua") == 0);
+	assert(fo->alt_value && strcmp(fo->alt_value, "O Prior Antonio de [?]") == 0);
+	assert((fo->flags & SCRIBE_FLAG_ILLEGIBLE) == 0);
+
+	scribe_entry_free(&entries[0]);
+	free(entries);
+	scribe_template_free(tpl);
+	scribe_store_close(store);
+	rm_rf(tmpdir);
+	printf("[PASS] test_paleography_uncertain_markers_and_escalation\n");
+}
+
+static void test_generic_vs_pack_prompts_and_invoice_validation(void)
+{
+	scribe_pack_t *gpack = scribe_pack_load_dir("packs/generic");
+	scribe_pack_t *ptpack = scribe_pack_load_dir("packs/pt-archival-handwriting");
+	assert(gpack != NULL && ptpack != NULL);
+
+	scribe_template_t *inv_tpl = scribe_template_load_file("packs/generic/templates/invoice_starter.json");
+	scribe_template_t *bap_tpl = scribe_template_load_file("packs/pt-archival-handwriting/templates/baptism_starter.json");
+	assert(inv_tpl != NULL && bap_tpl != NULL);
+
+	/* 1. Generic engine prompt must have zero paleography/Portuguese literals */
+	char *p_gen = NULL;
+	assert(scribe_build_extraction_prompt_ex(NULL, inv_tpl, &p_gen) == 0 && p_gen != NULL);
+	assert(strstr(p_gen, "\"invoice_number\"") != NULL);
+	assert(strstr(p_gen, "EUR | USD | GBP | BRL | CHF") != NULL);
+	assert(strstr(p_gen, "paleographer") == NULL);
+	assert(strstr(p_gen, "averbamentos") == NULL);
+	assert(strstr(p_gen, "parish") == NULL);
+	free(p_gen);
+
+	/* 2. Archival pack injects paleography persona, guide, and transcript-first order */
+	char *p_pt = NULL;
+	assert(scribe_build_extraction_prompt_ex(ptpack, bap_tpl, &p_pt) == 0 && p_pt != NULL);
+	assert(strstr(p_pt, "paleographer") != NULL);
+	assert(strstr(p_pt, "averbamentos") != NULL);
+	assert(strstr(p_pt, "\"transcript\"") != NULL);
+	assert(strstr(p_pt, "\"baptism_date\"") != NULL);
+	free(p_pt);
+
+	/* 3. Invoice validation: valid currency, enum, date_le, num_le */
+	scribe_entry_t inv;
+	scribe_entry_init(&inv);
+	assert(scribe_entry_set_field(&inv, "vendor_name", "Acme Printing Lda", NULL, 0, NULL) == 0);
+	assert(scribe_entry_set_field(&inv, "invoice_number", "INV-2026-0042", NULL, 0, NULL) == 0);
+	assert(scribe_entry_set_field(&inv, "issue_date", "2026-01-10", NULL, 0, NULL) == 0);
+	assert(scribe_entry_set_field(&inv, "due_date", "2026-02-10", NULL, 0, NULL) == 0);
+	assert(scribe_entry_set_field(&inv, "currency", "EUR", NULL, 0, NULL) == 0);
+	assert(scribe_entry_set_field(&inv, "subtotal", "100.00", NULL, 0, NULL) == 0);
+	assert(scribe_entry_set_field(&inv, "tax_amount", "23.00", NULL, 0, NULL) == 0);
+	assert(scribe_entry_set_field(&inv, "total_amount", "123.00", NULL, 0, NULL) == 0);
+	assert(scribe_entry_set_field(&inv, "line_items_count", "3", NULL, 0, NULL) == 0);
+	assert(scribe_validate_entry_ex(gpack, inv_tpl, &inv) == 0);
+
+	/* Break enum, currency, date_le (due < issue), and num_le (subtotal > total) */
+	assert(scribe_entry_set_field(&inv, "currency", "XYZ", NULL, 0, NULL) == 0);
+	assert(scribe_entry_set_field(&inv, "due_date", "2025-12-31", NULL, 0, NULL) == 0);
+	assert(scribe_entry_set_field(&inv, "subtotal", "200.00", NULL, 0, NULL) == 0);
+	assert(scribe_entry_set_field(&inv, "line_items_count", "three", NULL, 0, NULL) == 0);
+	size_t nbad = scribe_validate_entry_ex(gpack, inv_tpl, &inv);
+	assert(nbad == 4);
+	assert(scribe_entry_get_field(&inv, "currency")->flags & SCRIBE_FLAG_INVALID);
+	assert(scribe_entry_get_field(&inv, "due_date")->flags & SCRIBE_FLAG_INVALID);
+	assert(scribe_entry_get_field(&inv, "total_amount")->flags & SCRIBE_FLAG_INVALID);
+	assert(scribe_entry_get_field(&inv, "line_items_count")->flags & SCRIBE_FLAG_INVALID);
+
+	/* Pack year range: 1850 invalid under generic pack (min_year=1900), valid under archival pack */
+	assert(scribe_entry_set_field(&inv, "currency", "EUR", NULL, 0, NULL) == 0);
+	assert(scribe_entry_set_field(&inv, "issue_date", "1850-05-01", NULL, 0, NULL) == 0);
+	assert(scribe_entry_set_field(&inv, "due_date", "1850-06-01", NULL, 0, NULL) == 0);
+	assert(scribe_entry_set_field(&inv, "subtotal", "50.00", NULL, 0, NULL) == 0);
+	assert(scribe_entry_set_field(&inv, "line_items_count", "2", NULL, 0, NULL) == 0);
+	assert(scribe_validate_entry_ex(gpack, inv_tpl, &inv) == 2); /* issue_date + due_date < 1900 */
+	assert(scribe_validate_entry_ex(ptpack, inv_tpl, &inv) == 0); /* 1850 allowed in [1500..2100] */
+
+	/* Pack-specific uncertainty markers */
+	assert(scribe_has_uncertain_marker_ex("Total [unclear]", gpack) == 1);
+	assert(scribe_has_uncertain_marker_ex("Nome [ilegível]", ptpack) == 1);
+	assert(scribe_has_uncertain_marker_ex("Nome [ilegível]", gpack) == 0);
+
+	scribe_entry_free(&inv);
+	scribe_template_free(inv_tpl);
+	scribe_template_free(bap_tpl);
+	scribe_pack_free(gpack);
+	scribe_pack_free(ptpack);
+	printf("[PASS] test_generic_vs_pack_prompts_and_invoice_validation\n");
+}
+
 int main(void)
 {
 	test_base64_and_prompt();
@@ -376,6 +534,8 @@ int main(void)
 	test_mock_extraction_and_two_pass_conflicts();
 	test_auren_socket_client_chunked();
 	test_benchmark_scoring();
+	test_paleography_uncertain_markers_and_escalation();
+	test_generic_vs_pack_prompts_and_invoice_validation();
 	printf("ALL SCRIBE EXTRACT TESTS PASSED\n");
 	return 0;
 }

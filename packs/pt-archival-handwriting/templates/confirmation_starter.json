@@ -1,0 +1,21 @@
+{
+  "id": "confirmation_starter",
+  "label": "Confirmation Register (Assento de Crisma)",
+  "version": 1,
+  "prompt_hint": "Transcribe this Confirmation certificate or register entry (assento de crisma) verbatim. Do not modernize spellings or drop diacritics. Output null for any illegible field instead of guessing. Record later marriage or archival margin averbamentos in marginal_notes.",
+  "fields": [
+    { "key": "person_name", "label": "Confirmand Full Name", "type": "person", "required": true, "dict_category": "person" },
+    { "key": "confirmation_name", "label": "Confirmation Name", "type": "person", "required": false, "dict_category": "person" },
+    { "key": "confirmation_date", "label": "Confirmation Date", "type": "date", "required": true, "format_hint": "YYYY-MM-DD" },
+    { "key": "parish", "label": "Parish / Freguesia", "type": "place", "required": true, "dict_category": "place" },
+    { "key": "sponsor", "label": "Sponsor / Padrinho", "type": "person", "required": false, "dict_category": "person" },
+    { "key": "parents", "label": "Parents / Pais", "type": "person", "required": false, "dict_category": "person" },
+    { "key": "officiant", "label": "Officiant / Bispo", "type": "person", "required": false, "dict_category": "person" },
+    { "key": "baptism_date", "label": "Baptism Date", "type": "date", "required": false, "format_hint": "YYYY-MM-DD" },
+    { "key": "baptism_parish", "label": "Baptism Parish", "type": "place", "required": false, "dict_category": "place" },
+    { "key": "book_page_entry", "label": "Book / Folio / Entry Ref", "type": "text", "required": false, "format_hint": "e.g. Livro 8 fl. 12 #1" }
+  ],
+  "constraints": [
+    { "op": "date_le", "lhs": "baptism_date", "rhs": "confirmation_date" }
+  ]
+}

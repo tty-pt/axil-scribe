@@ -1,0 +1,19 @@
+{
+  "id": "generic",
+  "label": "Generic Document Pack",
+  "version": 1,
+  "system_persona": "You are a precision document extraction assistant.",
+  "extraction_guide": "Transcribe printed or handwritten fields verbatim without inventing missing text. Normalize dates to YYYY-MM-DD and monetary amounts to plain decimal numbers (e.g. 1240.50). Use null for any unreadable or absent value.",
+  "uncertainty_markers": "[?], [illegible], [unclear]",
+  "preprocess_preset": "document",
+  "transcript_first": false,
+  "min_year": 1900,
+  "max_year": 2100,
+  "ui": {
+    "source_label": "Source Ref",
+    "notes_label": "Notes / Annotations",
+    "transcript_label": "Full Transcript",
+    "deep_label": "Deep Re-Extract",
+    "print_title": "Document Transcript"
+  }
+}

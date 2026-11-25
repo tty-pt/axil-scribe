@@ -81,6 +81,10 @@ bench: all
 	python3 tests/generate_synthetic_certs.py --out tests/fixtures/synthetic
 	${TEST_ENV} ./bin/scribe-bench${EXE} --fixtures tests/fixtures/synthetic --templates templates --backend mock --model mock-v1 --model2 mock-v2
 
+bench-handwriting: all
+	python3 tests/fetch_real_handwriting.py --out tests/fixtures/real_handwriting
+	${TEST_ENV} ./bin/scribe-bench${EXE} --fixtures tests/fixtures/real_handwriting --pack packs/pt-archival-handwriting --backend auren --model fast --model2 very-fast --escalate smart --enhance --verbose
+
 ${DESTDIR}${PREFIX}/lib/pkgconfig/scribe.pc: scribe.pc
 	install -d ${DESTDIR}${PREFIX}/lib/pkgconfig
 	install -m 644 scribe.pc $@
@@ -93,12 +97,18 @@ install-templates:
 	install -d ${DESTDIR}${PREFIX}/share/axil-scribe/templates
 	install -m 644 templates/*.json ${DESTDIR}${PREFIX}/share/axil-scribe/templates/
 
+install-packs:
+	install -d ${DESTDIR}${PREFIX}/share/axil-scribe/packs
+	cp -R packs/. ${DESTDIR}${PREFIX}/share/axil-scribe/packs/
+
 install-htdocs: htdocs/scribe_ux.wasm
 	install -d ${DESTDIR}${PREFIX}/share/axil-scribe/htdocs
 	install -m 644 htdocs/scribe_ux.wasm ${DESTDIR}${PREFIX}/share/axil-scribe/htdocs/
 
-install-scripts: scripts/scribe-server
+install-scripts: scripts/scribe-server tests/fetch_real_handwriting.py
 	install -d ${DESTDIR}${PREFIX}/bin
 	install -m 755 scripts/scribe-server ${DESTDIR}${PREFIX}/bin/scribe-server
+	install -d ${DESTDIR}${PREFIX}/share/axil-scribe/tests
+	install -m 755 tests/fetch_real_handwriting.py ${DESTDIR}${PREFIX}/share/axil-scribe/tests/fetch_real_handwriting.py
 
-install: ${DESTDIR}${PREFIX}/lib/pkgconfig/scribe.pc ${DESTDIR}${PREFIX}/lib/pkgconfig/axil-scribe.pc install-templates install-htdocs install-scripts
+install: ${DESTDIR}${PREFIX}/lib/pkgconfig/scribe.pc ${DESTDIR}${PREFIX}/lib/pkgconfig/axil-scribe.pc install-templates install-packs install-htdocs install-scripts

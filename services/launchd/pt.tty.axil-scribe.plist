@@ -8,6 +8,9 @@
 	<array>
 		<string>@PREFIX@/bin/axil</string>
 		<string>-A</string>
+		<string>-d</string>
+		<string>-B</string>
+		<string>33554432</string>
 		<string>-p</string>
 		<string>8095</string>
 		<string>-m</string>

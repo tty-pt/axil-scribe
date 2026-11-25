@@ -102,7 +102,7 @@ echo "--- Starting ephemeral axil on 127.0.0.1:$TEST_PORT ---"
 LIB_PATHS="$DIR/lib:$DIR/../libcorm/lib:$DIR/../liblemma/lib:$DIR/../libhyle/lib:$DIR/../libbud/lib:$DIR/../libstele/lib:$DIR/../libxylem/lib:$DIR/../axil/lib"
 LD_LIBRARY_PATH="$LIB_PATHS:${LD_LIBRARY_PATH:-}" \
 SCRIBE_DATA_DIR="$DATA_DIR" \
-SCRIBE_TEMPLATES_DIR="$DIR/templates" \
+SCRIBE_PACK_DIR="$DIR/packs/pt-archival-handwriting" \
 SCRIBE_DICT_PATH="$DICT_FILE" \
 SCRIBE_MOCK_JSON="$MOCK_FILE" \
 SCRIBE_WASM_PATH="$DIR/htdocs/scribe_ux.wasm" \
@@ -130,6 +130,7 @@ QUEUE_HTML=$(curl -fsS "$BASE/")
 echo "$QUEUE_HTML" | grep -q 'action="/ingest"'
 echo "$QUEUE_HTML" | grep -q 'enctype="multipart/form-data"'
 echo "$QUEUE_HTML" | grep -q 'confirmation_starter'
+echo "$QUEUE_HTML" | grep -q 'Portuguese Archival Handwriting'
 
 CSS_CT=$(curl -fsS -o /dev/null -w "%{content_type}" "$BASE/assets/scribe.css")
 echo "$CSS_CT" | grep -qi "text/css"
@@ -163,6 +164,7 @@ echo "$ENTRY_HTML" | grep -q 'CONFLICT'
 echo "$ENTRY_HTML" | grep -q 'Raw OCR: Joao Pereyra'
 echo "$ENTRY_HTML" | grep -q 'scribe-bbox'
 echo "$ENTRY_HTML" | grep -q 'João Pereira'
+echo "$ENTRY_HTML" | grep -q 'Deep Paleography'
 echo "$ENTRY_HTML" | grep -q "src=\"/pages/$PAGE_ID/image\""
 echo "PASS: Split-screen workbench rendered CONFLICT, Raw OCR, bbox, and advisory suggestion."
 
@@ -250,5 +252,34 @@ echo "$TRANSCRIPT_HTML" | grep -q "Archivist-A"
 echo "$TRANSCRIPT_HTML" | grep -q "João Pereira"
 echo "$TRANSCRIPT_HTML" | grep -q "Joao Pereyra"
 echo "PASS: CSV, JSON, and printable archival transcript verified."
+
+# 9. Generic Pack E2E check (proves same compiled binary adapts to invoice/generic pack)
+echo "--- 9. Testing generic domain pack (packs/generic + invoice_starter) ---"
+kill "$SERVER_PID" 2>/dev/null || true
+wait "$SERVER_PID" 2>/dev/null || true
+SERVER_PID=""
+
+GEN_DATA_DIR="$(mktemp -d)"
+GEN_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
+LD_LIBRARY_PATH="$LIB_PATHS:${LD_LIBRARY_PATH:-}" \
+SCRIBE_DATA_DIR="$GEN_DATA_DIR" \
+SCRIBE_PACK_DIR="$DIR/packs/generic" \
+SCRIBE_WASM_PATH="$DIR/htdocs/scribe_ux.wasm" \
+"$AXIL_BIN" -A -p "$GEN_PORT" -m "$MODULE_PATH" >"$LOG_FILE" 2>&1 &
+SERVER_PID=$!
+
+for _ in $(seq 1 40); do
+	if python3 -c "import socket; s=socket.create_connection(('127.0.0.1',$GEN_PORT),0.1); s.close()" 2>/dev/null; then
+		break
+	fi
+	sleep 0.1
+done
+
+GEN_HTML=$(curl -fsS "http://127.0.0.1:$GEN_PORT/")
+echo "$GEN_HTML" | grep -q 'Generic Document Pack'
+echo "$GEN_HTML" | grep -q 'invoice_starter'
+echo "$GEN_HTML" | grep -q 'Source Ref'
+rm -rf "$GEN_DATA_DIR"
+echo "PASS: Generic pack served invoice_starter and generic UI vocabulary."
 
 echo "=== ALL AXIL-SCRIBE E2E TESTS PASSED ==="

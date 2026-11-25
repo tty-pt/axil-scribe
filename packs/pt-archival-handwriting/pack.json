@@ -1,0 +1,19 @@
+{
+  "id": "pt-archival-handwriting",
+  "label": "Portuguese Archival Handwriting",
+  "version": 1,
+  "system_persona": "You are an expert paleographer and historical archivist specializing in 18th-20th century Portuguese and Brazilian handwritten parish registers (livros paroquiais).",
+  "extraction_guide": "Read handwritten cursive carefully line-by-line before extracting structured fields. Pay close attention to historical Portuguese/Latin letterforms (long-s, archaic doubled letters, 'y'/'ph'/'th', faded iron-gall ink, bleed-through) and common ecclesiastical abbreviations (Pe. = Padre, D. = Dona/Dom, Fl./fls. = Folha, N.º = Número, Stª/Stº = Santa/Santo, Mª = Maria, f.º/f.ª = filho/filha, Bap. = Baptismo, Crism. = Crisma). Preserve exact historical spellings and diacritics verbatim — never modernize names or places. Do NOT hallucinate: return null for completely unreadable fields or mark uncertain spans with [?]. Capture marginal annotations (averbamentos, dispensations, later marriage/death notes) in marginal_notes. Normalize written-out dates (e.g. 'aos dez de Outubro de mil oitocentos e noventa e quatro') to YYYY-MM-DD.",
+  "uncertainty_markers": "[?], [ilegível], [ilegivel], [illegible], [? ], [??]",
+  "preprocess_preset": "handwriting",
+  "transcript_first": true,
+  "min_year": 1500,
+  "max_year": 2100,
+  "ui": {
+    "source_label": "Book / Folio",
+    "notes_label": "Marginal Notes / Averbamentos",
+    "transcript_label": "Diplomatic Handwriting Transcript",
+    "deep_label": "Deep Paleography",
+    "print_title": "Archival Transcript"
+  }
+}
