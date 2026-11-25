@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>pt.tty.axil-scribe</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>@PREFIX@/bin/axil</string>
+		<string>-A</string>
+		<string>-p</string>
+		<string>8095</string>
+		<string>-m</string>
+		<string>@PREFIX@/lib/libaxil-scribe</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/tmp/axil-scribe.log</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/axil-scribe.err</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>@PREFIX@/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+		<key>SCRIBE_TEMPLATES_DIR</key>
+		<string>@PREFIX@/share/axil-scribe/templates</string>
+		<key>SCRIBE_WASM_PATH</key>
+		<string>@PREFIX@/share/axil-scribe/htdocs/scribe_ux.wasm</string>
+	</dict>
+</dict>
+</plist>

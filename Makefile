@@ -97,4 +97,8 @@ install-htdocs: htdocs/scribe_ux.wasm
 	install -d ${DESTDIR}${PREFIX}/share/axil-scribe/htdocs
 	install -m 644 htdocs/scribe_ux.wasm ${DESTDIR}${PREFIX}/share/axil-scribe/htdocs/
 
-install: ${DESTDIR}${PREFIX}/lib/pkgconfig/scribe.pc ${DESTDIR}${PREFIX}/lib/pkgconfig/axil-scribe.pc install-templates install-htdocs
+install-scripts: scripts/scribe-server
+	install -d ${DESTDIR}${PREFIX}/bin
+	install -m 755 scripts/scribe-server ${DESTDIR}${PREFIX}/bin/scribe-server
+
+install: ${DESTDIR}${PREFIX}/lib/pkgconfig/scribe.pc ${DESTDIR}${PREFIX}/lib/pkgconfig/axil-scribe.pc install-templates install-htdocs install-scripts

@@ -1,0 +1,44 @@
+{
+  "name": "@tty-pt/scribe",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Pure-C handwritten and archival document OCR, structured field extraction, and human-in-the-loop (HITL) verification SDK and Axil module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "prebuilds",
+    "include",
+    "templates",
+    "scribe.pc",
+    "axil-scribe.pc",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build:wasm": "make -C .. wasm-ux && cp ../htdocs/scribe_ux.wasm dist/scribe_ux.wasm",
+    "test": "node --test tests/scribe-client.test.mjs"
+  },
+  "dependencies": {
+    "@tty-pt/axil": "^1.8.1",
+    "@tty-pt/stele": "^1.7.1"
+  },
+  "keywords": [
+    "axil",
+    "axil-scribe",
+    "ocr",
+    "vlm",
+    "handwriting",
+    "archives",
+    "hitl",
+    "wasm",
+    "tty-pt"
+  ],
+  "author": "Paulo Quirino <quirinpa@gmail.com>",
+  "license": "BSD-2-Clause",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tty-pt/axil-scribe.git",
+    "directory": "npm"
+  }
+}

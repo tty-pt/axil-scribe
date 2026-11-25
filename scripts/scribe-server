@@ -1,0 +1,191 @@
+#!/bin/sh
+# scribe-server — turnkey local/offline launcher for axil-scribe (:8095)
+set -e
+
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+REPO_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
+
+DEMO_MODE=0
+EXTRA_ARGS=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--demo)
+		DEMO_MODE=1
+		shift
+		;;
+	-h|--help)
+		cat <<'EOF'
+Usage: scribe-server [--demo] [extra axil args...]
+
+Environment variables:
+  SCRIBE_PORT          HTTP port (default: 8095)
+  SCRIBE_DATA_DIR      Persistent store dir (default: ~/.local/share/axil-scribe/data)
+  SCRIBE_TEMPLATES_DIR Template JSON dir (auto-detected)
+  SCRIBE_DICT_PATH     Optional TSV advisory dictionary
+  SCRIBE_AUREN_HOST    axil-auren host (default: 127.0.0.1)
+  SCRIBE_AUREN_PORT    axil-auren port (default: 4242)
+  SCRIBE_MODEL         Primary VLM model id (default: qwen2.5-vl-7b)
+  SCRIBE_MODEL2        Optional secondary VLM model id for 2-pass conflict routing
+  SCRIBE_MOCK_JSON     Optional mock extraction JSON file/payload (for offline demos)
+
+Options:
+  --demo               Launch in an isolated temp data dir with a built-in 2-pass
+                       conflict mock fixture so you can test the full HITL workflow
+                       immediately in your browser without downloading a VLM.
+EOF
+		exit 0
+		;;
+	*)
+		break
+		;;
+	esac
+done
+
+PORT="${SCRIBE_PORT:-8095}"
+AUREN_HOST="${SCRIBE_AUREN_HOST:-127.0.0.1}"
+AUREN_PORT="${SCRIBE_AUREN_PORT:-4242}"
+
+# Resolve axil binary
+AXIL_BIN="${AXIL_BIN:-}"
+if [ -z "$AXIL_BIN" ]; then
+	if [ -x "$REPO_DIR/../axil/bin/axil" ]; then
+		AXIL_BIN="$REPO_DIR/../axil/bin/axil"
+	elif [ -x "$REPO_DIR/bin/axil" ]; then
+		AXIL_BIN="$REPO_DIR/bin/axil"
+	elif [ -x "$HOME/.local/bin/axil" ]; then
+		AXIL_BIN="$HOME/.local/bin/axil"
+	else
+		AXIL_BIN="$(command -v axil || true)"
+	fi
+fi
+if [ -z "$AXIL_BIN" ] || [ ! -x "$AXIL_BIN" ]; then
+	echo "ERROR: axil binary not found (install axil or set AXIL_BIN)" >&2
+	exit 1
+fi
+
+# Resolve libaxil-scribe module path
+MOD_PATH=""
+if [ -f "$REPO_DIR/lib/libaxil-scribe.so" ] || [ -f "$REPO_DIR/lib/libaxil-scribe.dylib" ]; then
+	MOD_PATH="$REPO_DIR/lib/libaxil-scribe"
+	LIB_PATHS="$REPO_DIR/lib:$REPO_DIR/../libcorm/lib:$REPO_DIR/../liblemma/lib:$REPO_DIR/../libhyle/lib:$REPO_DIR/../libbud/lib:$REPO_DIR/../libstele/lib:$REPO_DIR/../libxylem/lib:$REPO_DIR/../axil/lib"
+elif [ -f "$HOME/.local/lib/libaxil-scribe.so" ] || [ -f "$HOME/.local/lib/libaxil-scribe.dylib" ]; then
+	MOD_PATH="$HOME/.local/lib/libaxil-scribe"
+	LIB_PATHS="$HOME/.local/lib"
+elif [ -f "/usr/local/lib/libaxil-scribe.so" ] || [ -f "/usr/local/lib/libaxil-scribe.dylib" ]; then
+	MOD_PATH="/usr/local/lib/libaxil-scribe"
+	LIB_PATHS="/usr/local/lib"
+else
+	echo "ERROR: libaxil-scribe not found. Build with 'make' first." >&2
+	exit 1
+fi
+
+# Resolve templates directory
+if [ -z "${SCRIBE_TEMPLATES_DIR:-}" ]; then
+	if [ -d "$REPO_DIR/templates" ]; then
+		SCRIBE_TEMPLATES_DIR="$REPO_DIR/templates"
+	elif [ -d "$REPO_DIR/share/axil-scribe/templates" ]; then
+		SCRIBE_TEMPLATES_DIR="$REPO_DIR/share/axil-scribe/templates"
+	elif [ -d "$HOME/.local/share/axil-scribe/templates" ]; then
+		SCRIBE_TEMPLATES_DIR="$HOME/.local/share/axil-scribe/templates"
+	elif [ -d "/usr/local/share/axil-scribe/templates" ]; then
+		SCRIBE_TEMPLATES_DIR="/usr/local/share/axil-scribe/templates"
+	fi
+fi
+
+# Resolve WASM UX asset
+if [ -z "${SCRIBE_WASM_PATH:-}" ]; then
+	if [ -f "$REPO_DIR/htdocs/scribe_ux.wasm" ]; then
+		SCRIBE_WASM_PATH="$REPO_DIR/htdocs/scribe_ux.wasm"
+	elif [ -f "$REPO_DIR/share/axil-scribe/htdocs/scribe_ux.wasm" ]; then
+		SCRIBE_WASM_PATH="$REPO_DIR/share/axil-scribe/htdocs/scribe_ux.wasm"
+	elif [ -f "$HOME/.local/share/axil-scribe/htdocs/scribe_ux.wasm" ]; then
+		SCRIBE_WASM_PATH="$HOME/.local/share/axil-scribe/htdocs/scribe_ux.wasm"
+	elif [ -f "/usr/local/share/axil-scribe/htdocs/scribe_ux.wasm" ]; then
+		SCRIBE_WASM_PATH="/usr/local/share/axil-scribe/htdocs/scribe_ux.wasm"
+	fi
+fi
+
+if [ "$DEMO_MODE" -eq 1 ]; then
+	DEMO_DIR="${SCRIBE_DATA_DIR:-/tmp/axil-scribe-demo}"
+	mkdir -p "$DEMO_DIR"
+	SCRIBE_DATA_DIR="$DEMO_DIR/data"
+	DEMO_MOCK="$DEMO_DIR/demo_mock.json"
+	DEMO_DICT="$DEMO_DIR/demo_dict.tsv"
+	cat > "$DEMO_MOCK" <<'EOF'
+[
+  {
+    "entries": [
+      {
+        "fields": {
+          "person_name": "Maria das Graças Silva",
+          "confirmation_name": "Teresa",
+          "confirmation_date": "1954-06-24",
+          "parish": "São João",
+          "sponsor": "Joao Pereyra",
+          "parents": "António Silva e Conceição Costa",
+          "officiant": "Pe. Manuel",
+          "baptism_date": "1942-04-10",
+          "baptism_parish": "São João",
+          "book_page_entry": "Livro-1954 fl.12 #1"
+        },
+        "bbox": {
+          "sponsor": [0.10, 0.55, 0.65, 0.08]
+        },
+        "marginal_notes": "Margem: ver fl. 12"
+      }
+    ]
+  },
+  {
+    "entries": [
+      {
+        "fields": {
+          "person_name": "Maria das Graças Silva",
+          "confirmation_name": "Teresa",
+          "confirmation_date": "1954-06-24",
+          "parish": "São João",
+          "sponsor": "João Pereira",
+          "parents": "António Silva e Conceição Costa",
+          "officiant": "Pe. Manuel",
+          "baptism_date": "1942-04-10",
+          "baptism_parish": "São João",
+          "book_page_entry": "Livro-1954 fl.12 #1"
+        }
+      }
+    ]
+  }
+]
+EOF
+	printf 'person\tJoão Pereira\t1900\t1980\nplace\tSão João\t1800\t2000\n' > "$DEMO_DICT"
+	SCRIBE_MOCK_JSON="$DEMO_MOCK"
+	SCRIBE_DICT_PATH="$DEMO_DICT"
+	echo "Demo mode enabled (2-pass conflict mock + advisory dictionary in $DEMO_DIR)"
+	if [ -f "$REPO_DIR/tests/generate_synthetic_certs.py" ] && command -v python3 >/dev/null 2>&1; then
+		python3 "$REPO_DIR/tests/generate_synthetic_certs.py" --out "$DEMO_DIR/samples" >/dev/null 2>&1 || true
+		if [ -d "$DEMO_DIR/samples" ]; then
+			echo "Sample synthetic scans ready to upload in: $DEMO_DIR/samples/"
+		fi
+	fi
+else
+	SCRIBE_DATA_DIR="${SCRIBE_DATA_DIR:-$HOME/.local/share/axil-scribe/data}"
+	# Non-blocking check for local axil-auren daemon
+	if command -v curl >/dev/null 2>&1; then
+		if curl -fsS --max-time 1 "http://${AUREN_HOST}:${AUREN_PORT}/v1/models" >/dev/null 2>&1; then
+			echo "axil-auren reachable at http://${AUREN_HOST}:${AUREN_PORT}"
+		else
+			echo "NOTE: axil-auren not detected at http://${AUREN_HOST}:${AUREN_PORT} (uploads still work in manual/pending mode, or pass --demo)"
+		fi
+	fi
+fi
+
+export SCRIBE_DATA_DIR
+export SCRIBE_TEMPLATES_DIR
+export SCRIBE_WASM_PATH
+export SCRIBE_AUREN_HOST="$AUREN_HOST"
+export SCRIBE_AUREN_PORT="$AUREN_PORT"
+[ -n "${SCRIBE_MOCK_JSON:-}" ] && export SCRIBE_MOCK_JSON
+[ -n "${SCRIBE_DICT_PATH:-}" ] && export SCRIBE_DICT_PATH
+export LD_LIBRARY_PATH="$LIB_PATHS:${LD_LIBRARY_PATH:-}"
+export DYLD_LIBRARY_PATH="$LIB_PATHS:${DYLD_LIBRARY_PATH:-}"
+
+echo "Starting axil-scribe on http://127.0.0.1:${PORT}/ (data=${SCRIBE_DATA_DIR})"
+exec "$AXIL_BIN" -A -p "$PORT" -m "$MOD_PATH" "$@"

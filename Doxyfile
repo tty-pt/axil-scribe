@@ -1,0 +1,3 @@
+PROJECT_NAME           = "axil-scribe"
+@INCLUDE = ../mk/Doxyfile
+INPUT                  = include/ttypt/

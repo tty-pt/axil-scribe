@@ -1,0 +1,24 @@
+#!/bin/sh
+#
+# $FreeBSD$
+#
+# PROVIDE: axil_scribe
+# REQUIRE: LOGIN cleanvar
+# KEYWORD: shutdown
+#
+# Add the following line to /etc/rc.conf to enable axil-scribe:
+# axil_scribe_enable="YES"
+#
+
+. /etc/rc.subr
+
+name="axil_scribe"
+rcvar="axil_scribe_enable"
+
+command="@PREFIX@/bin/axil"
+command_args="-A -d -p 8095 -m @PREFIX@/lib/libaxil-scribe.so"
+
+load_rc_config $name
+: ${axil_scribe_enable:="NO"}
+
+run_rc_command "$1"

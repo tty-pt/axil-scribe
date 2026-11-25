@@ -1,0 +1,15 @@
+#!/sbin/openrc-run
+# OpenRC service script for axil-scribe
+
+name="axil-scribe"
+description="Axil Scribe Archival OCR & HITL Verification Server"
+
+command="@PREFIX@/bin/axil"
+command_args="-A -p 8095 -m @PREFIX@/lib/libaxil-scribe.so"
+command_background=true
+pidfile="/run/${RC_SVCNAME}.pid"
+
+depend() {
+	need net
+	after firewall
+}

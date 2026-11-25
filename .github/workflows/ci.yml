@@ -1,0 +1,23 @@
+name: ci
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    uses: tty-pt/ci/.github/workflows/all-in-one.yml@main
+    with:
+      name: axil-scribe
+      deps: "axil,libxylem,libstele,libcorm,liblemma,libhyle,libbud,libjson-c-dev,poppler-utils"
+      deps_pacman: "axil,libxylem,libstele,libcorm,liblemma,libhyle,libbud,json-c,poppler"
+      deps_apk: "axil,libxylem,libstele,libcorm,liblemma,libhyle,libbud,json-c-dev,poppler-utils,libbsd-dev"
+      deps_rpm: "axil,libxylem,libstele,libcorm,liblemma,libhyle,libbud,json-c-devel,poppler-utils"
+      deps_brew: "axil,libxylem,libstele,libcorm,liblemma,libhyle,libbud,json-c,poppler"
+      deps_openbsd: "axil,libxylem,libstele,libcorm,liblemma,libhyle,libbud,json-c,poppler-utils"
+      deps_winget: "mingw-w64-x86_64-json-c,mingw-w64-x86_64-xxhash,mingw-w64-x86_64-mman-win32,mingw-w64-x86_64-openssl,mingw-w64-x86_64-libiconv"
+      deps_winget_tty: "libstele,libcorm,liblemma,libhyle,libbud,libxylem,axil"
+      publish_to: "deb,apk,rpm,pacman,brew,openbsd,winget,npm"
+      test_build: "true"
+    secrets: inherit

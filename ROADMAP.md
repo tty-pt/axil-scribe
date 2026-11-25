@@ -213,17 +213,17 @@ Deliver the usable local/web application with full No-JS parity and fast keyboar
 
 Ship `axil-scribe` using the exact distribution machinery of the rest of `tty.pt`.
 
-- [ ] **4.1 Cross-platform OS service definitions (`services/`)**
+- [x] **4.1 Cross-platform OS service definitions (`services/`)**
   - Add service units matching `axil-auren`: `systemd/`, `launchd/`, `freebsd/`, `openrc/`, `rc.d/`, `windows/`, `xdg/`.
   - Provide a turnkey offline launcher (`scripts/scribe-server`) starting `axil` (+ checking local `axil-auren` availability).
-- [ ] **4.2 Colocated NPM package (`npm/`)**
+- [x] **4.2 Colocated NPM package (`npm/`)**
   - Publish `@tty-pt/scribe` containing prebuilt native module, WASM UX artifact, C headers (`include/ttypt/scribe.h`), and `scribe.pc` so `npx axil -A -p 8095 -m axil-scribe` runs with zero local compiler.
-- [ ] **4.3 Multi-OS CI release pipeline (`.github/workflows/ci.yml`)**
+- [x] **4.3 Multi-OS CI release pipeline (`.github/workflows/ci.yml`)**
   - Wire `tty-pt/ci/.github/workflows/all-in-one.yml@main` targeting `deb,apk,rpm,pacman,brew,openbsd,winget,npm` with `test_build: "true"`.
-- [ ] **4.4 Documentation & optional `site` integration**
+- [x] **4.4 Documentation & optional `site` integration**
   - Add `CHANGELOG.md`, `Doxyfile`, `docs/USAGE.md`, and offline hardware tier guide (RAM/VRAM footprints for recommended local VLM GGUFs).
   - Register `axil-scribe` in `site/docs/SIBLING_REPOS.md` and optionally `site/mods/software` (with an optional sandbox demo running strictly on synthetic public sample certificates).
-- [ ] **Verify Phase 4:**
+- [x] **Verify Phase 4:**
   - `make PREFIX="$HOME/.local" install` succeeds without root.
   - `npm --prefix npm test` passes and `.github/workflows/ci.yml` passes tag/dry-run build.
 

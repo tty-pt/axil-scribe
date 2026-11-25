@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Axil Scribe
+Comment=Axil Scribe Archival OCR & HITL Verification Server
+Exec=@PREFIX@/bin/axil -A -p 8095 -m @PREFIX@/lib/libaxil-scribe.so
+Terminal=false
+Categories=Office;Utility;
+X-GNOME-Autostart-enabled=true
