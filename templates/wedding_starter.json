@@ -1,0 +1,17 @@
+{
+  "id": "wedding_starter",
+  "label": "Wedding / Marriage Certificate (Starter)",
+  "version": 1,
+  "prompt_hint": "Transcribe this Wedding/Marriage certificate or parish register entry verbatim. Preserve exact spellings and diacritics for both spouses, parents, witnesses, and officiant. Output null for illegible text. Capture dispensations or margin annotations in marginal_notes.",
+  "fields": [
+    { "key": "groom_name", "label": "Groom Full Name", "type": "person", "required": true },
+    { "key": "bride_name", "label": "Bride Full Name", "type": "person", "required": true },
+    { "key": "marriage_date", "label": "Marriage Date", "type": "date", "required": true },
+    { "key": "parish", "label": "Parish / Church", "type": "place", "required": true },
+    { "key": "groom_parents", "label": "Groom's Parents", "type": "person", "required": false },
+    { "key": "bride_parents", "label": "Bride's Parents", "type": "person", "required": false },
+    { "key": "witnesses", "label": "Witnesses", "type": "person", "required": false },
+    { "key": "officiant", "label": "Officiant / Priest", "type": "person", "required": false },
+    { "key": "book_page_entry", "label": "Book / Page / Entry Ref", "type": "text", "required": false }
+  ]
+}

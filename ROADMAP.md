@@ -139,23 +139,23 @@ typedef struct {
 
 Build and verify the standalone pure-C core with zero HTTP or UI coupling.
 
-- [ ] **1.1 Repository & build skeleton**
-  - Standard `Makefile` using `../mk/include.mk`, `objects-set.mk`, `scribe.pc`, `axil-scribe.pc`, canonical header `include/ttypt/scribe.h`.
-- [ ] **1.2 Data-driven template compiler (`src/scribe_template.c`)**
+- [x] **1.1 Repository & build skeleton**
+  - Standard `Makefile` using `../mk/include.mk`, `objects-set.mk`, `scribe.pc`, canonical header `include/ttypt/scribe.h`.
+- [x] **1.2 Data-driven template compiler (`src/scribe_template.c`)**
   - Load `templates/*.json` and compile into `scribe_template_t` + canonical `hyle_schema_desc_t`.
   - Ship starter templates usable immediately before real church scans arrive:
     - `templates/generic_record.json`
     - `templates/confirmation_starter.json`
     - `templates/wedding_starter.json`
     - `templates/baptism_starter.json`
-- [ ] **1.3 Immutable scan store & intake normalization (`src/scribe_ingest.c`)**
+- [x] **1.3 Immutable scan store & intake normalization (`src/scribe_ingest.c`)**
   - Content-addressed storage (`sha256` deduplication), EXIF auto-orientation, gentle deskew hook.
   - Multi-page PDF intake via `pdftoppm` fallback (200–300 DPI PNG/JPEG per page).
   - Explicitly avoid aggressive binarization/thresholding (preserves faint historical ink for VLMs).
-- [ ] **1.4 Persistence & indexing (`src/scribe_store.c`)**
+- [x] **1.4 Persistence & indexing (`src/scribe_store.c`)**
   - Store pages, entries, and dual-value fields via `libcorm` + `libhyle` + `libhyle-source`.
   - Index entries in `liblemma` (all writes routed through `hyle put`/`del` invariants); optional `libsepal` semantic index hook.
-- [ ] **Verify Phase 1:**
+- [x] **Verify Phase 1:**
   - `make` builds `lib/libscribe.so` with zero warnings.
   - Standalone unit suite (`tests/test_scribe_core`) verifies template compilation, SHA-256 dedup, 1-page → N-entries CRUD, dual-value audit preservation, and accent-sensitive `liblemma` search (exit code `0`).
 

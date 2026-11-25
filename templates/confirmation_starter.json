@@ -1,0 +1,18 @@
+{
+  "id": "confirmation_starter",
+  "label": "Confirmation Certificate (Starter)",
+  "version": 1,
+  "prompt_hint": "Transcribe this Confirmation certificate or register entry verbatim. Do not modernize spellings or drop diacritics. Output null for any illegible field instead of guessing. Record later marriage or archival margin notations in marginal_notes.",
+  "fields": [
+    { "key": "person_name", "label": "Confirmand Full Name", "type": "person", "required": true },
+    { "key": "confirmation_name", "label": "Confirmation Name", "type": "person", "required": false },
+    { "key": "confirmation_date", "label": "Confirmation Date", "type": "date", "required": true },
+    { "key": "parish", "label": "Parish / Church", "type": "place", "required": true },
+    { "key": "sponsor", "label": "Sponsor", "type": "person", "required": false },
+    { "key": "parents", "label": "Parents", "type": "person", "required": false },
+    { "key": "officiant", "label": "Officiant / Bishop", "type": "person", "required": false },
+    { "key": "baptism_date", "label": "Baptism Date", "type": "date", "required": false },
+    { "key": "baptism_parish", "label": "Baptism Parish", "type": "place", "required": false },
+    { "key": "book_page_entry", "label": "Book / Page / Entry Ref", "type": "text", "required": false }
+  ]
+}

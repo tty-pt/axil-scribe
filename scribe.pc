@@ -1,0 +1,10 @@
+prefix=/usr/local
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: scribe
+Description: Pure-C handwritten and archival document OCR template, scan store, and verification library
+Version: 0.1.0
+Libs: -L${libdir} -lscribe -lcorm -llemma -lhyle -lstele -ljson-c
+Cflags: -I${includedir}

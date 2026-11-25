@@ -1,0 +1,14 @@
+{
+  "id": "generic_record",
+  "label": "Generic Archival Record",
+  "version": 1,
+  "prompt_hint": "Transcribe verbatim from the scanned document. Preserve historical spellings and diacritics. Output null for illegible text rather than guessing. Capture margin annotations separately in marginal_notes.",
+  "fields": [
+    { "key": "title", "label": "Document Title / Heading", "type": "text", "required": false },
+    { "key": "person_name", "label": "Primary Person Name", "type": "person", "required": true },
+    { "key": "date", "label": "Record Date", "type": "date", "required": false },
+    { "key": "place", "label": "Place / Institution", "type": "place", "required": false },
+    { "key": "book_page_entry", "label": "Book / Page / Entry Ref", "type": "text", "required": false },
+    { "key": "notes", "label": "Additional Notes", "type": "notes", "required": false }
+  ]
+}

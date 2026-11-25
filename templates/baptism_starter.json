@@ -1,0 +1,17 @@
+{
+  "id": "baptism_starter",
+  "label": "Baptism Certificate (Starter)",
+  "version": 1,
+  "prompt_hint": "Transcribe this Baptism certificate or register entry verbatim. Preserve exact spellings, dates of birth and baptism, parents, and godparents. Output null for illegible ink. Place later confirmation or marriage margin notes in marginal_notes.",
+  "fields": [
+    { "key": "person_name", "label": "Baptized Full Name", "type": "person", "required": true },
+    { "key": "birth_date", "label": "Date of Birth", "type": "date", "required": false },
+    { "key": "baptism_date", "label": "Date of Baptism", "type": "date", "required": true },
+    { "key": "parish", "label": "Parish / Church", "type": "place", "required": true },
+    { "key": "father_name", "label": "Father Full Name", "type": "person", "required": false },
+    { "key": "mother_name", "label": "Mother Full Name", "type": "person", "required": false },
+    { "key": "godparents", "label": "Godparents / Sponsors", "type": "person", "required": false },
+    { "key": "officiant", "label": "Officiant / Priest", "type": "person", "required": false },
+    { "key": "book_page_entry", "label": "Book / Page / Entry Ref", "type": "text", "required": false }
+  ]
+}

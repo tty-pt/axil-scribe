@@ -11,4 +11,6 @@
 /var
 /uploads
 /tests/test_runner
+objects-set.mk
+*.corm
 !services/rc.d/
