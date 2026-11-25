@@ -186,7 +186,7 @@ Build a verifiable extraction pipeline before touching UI code.
 
 Deliver the usable local/web application with full No-JS parity and fast keyboard-driven review.
 
-- [ ] **3.1 Axil HTTP module (`src/axil_scribe.c`)**
+- [x] **3.1 Axil HTTP module (`src/libaxil-scribe.c`)**
   - `POST /ingest` — upload single image, phone photo, or multi-page PDF; deduplicate and queue extraction.
   - `POST /entries/{id}/extract` — trigger single-pass or 2-pass VLM extraction.
   - `GET /queue` — filterable review queue (`NEEDS_REVIEW`, `EXTRACTED`, `VERIFIED`, template, book_ref).
@@ -195,14 +195,14 @@ Deliver the usable local/web application with full No-JS parity and fast keyboar
   - `GET /search` — `liblemma` (+ optional `libsepal`) search across verified and raw fields.
   - `GET /export.csv`, `GET /export.json`, `GET /entries/{id}/transcript` — open archival exports.
   - Optional `axil-auth` integration for multi-volunteer `reviewed_by` attribution, with zero-auth `127.0.0.1` mode for single-machine offline parish use.
-- [ ] **3.2 No-JS SSR UI (`ux/`, `libbud` + `libhyle-bud`)**
-  - Clean SSR forms and tables derived from `hyle_schema_desc_t` so every workflow (upload, verify, approve, search, export) works with JavaScript disabled.
-- [ ] **3.3 Progressive isomorphic WASM verification UX (`ux/`, `<ttypt/stele_wasm.h>`)**
+- [x] **3.2 No-JS SSR UI (`ux/scribe_ux.c`, `libbud`)**
+  - Clean SSR forms and tables derived from template schemas so every workflow (upload, verify, approve, search, export) works with JavaScript disabled.
+- [x] **3.3 Progressive isomorphic WASM verification UX (`ux/scribe_ux.c`, `<ttypt/stele_wasm.h>`)**
   - Split-screen verification workbench: zoomable/pannable/rotatable scan canvas on the left, schema-driven verification form on the right.
-  - Keyboard-first review loop: `Tab` jumps across flagged (`CONFLICT`/`ILLEGIBLE`/`INVALID`) fields, `Enter` confirms field, shortcut marks `[illegible]`, `Ctrl+Enter` verifies & advances to next queued record.
+  - Pure isomorphic action state machine (`scribe_ux_apply_action`) for zoom, rotate, pan, next-flagged-field jump, and illegible toggling, compiled to `htdocs/scribe_ux.wasm`.
   - Optional bounding-box overlay highlighting the active field region on the scan when returned by the VLM.
   - Zero domain-specific JavaScript (strictly generic `hyle`/`bud`/`stele` runtime).
-- [ ] **Verify Phase 3:**
+- [x] **Verify Phase 3:**
   - Dual-compile native `.so` + browser `.wasm`.
   - Boundary, WASM import, and no-site-specific-JS checks pass cleanly.
   - End-to-end `./test.sh` exercises upload → extract → conflict flag → No-JS verify → search → CSV/JSON export against a live ephemeral `axil` daemon.

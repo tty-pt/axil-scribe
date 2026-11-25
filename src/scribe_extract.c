@@ -199,11 +199,19 @@ static int parse_single_entry_obj(struct json_object *eobj,
 			(void)scribe_entry_set_marginal_notes(out, ms);
 	}
 
+	struct json_object *jbboxes = NULL;
+	if (!json_object_object_get_ex(eobj, "bbox", &jbboxes) ||
+	    !jbboxes || !json_object_is_type(jbboxes, json_type_object)) {
+		jbboxes = NULL;
+	}
+
 	for (size_t i = 0; i < tpl->field_count; i++) {
 		const scribe_field_spec_t *spec = &tpl->fields[i];
 		struct json_object *jv = NULL;
 		const char *val = NULL;
 		uint32_t flags = SCRIBE_FLAG_NONE;
+		float bbox[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+		int has_bbox = 0;
 
 		if (json_object_object_get_ex(jfields, spec->key, &jv) && jv) {
 			if (json_object_is_type(jv, json_type_string)) {
@@ -222,7 +230,21 @@ static int parse_single_entry_obj(struct json_object *eobj,
 			flags |= SCRIBE_FLAG_ILLEGIBLE;
 		}
 
-		if (scribe_entry_set_field(out, spec->key, val, NULL, flags, NULL) != 0) {
+		if (jbboxes) {
+			struct json_object *jb = NULL;
+			if (json_object_object_get_ex(jbboxes, spec->key, &jb) &&
+			    jb && json_object_is_type(jb, json_type_array) &&
+			    json_object_array_length(jb) == 4) {
+				for (int b = 0; b < 4; b++) {
+					struct json_object *el = json_object_array_get_idx(jb, b);
+					bbox[b] = el ? (float)json_object_get_double(el) : 0.0f;
+				}
+				has_bbox = 1;
+			}
+		}
+
+		if (scribe_entry_set_field(out, spec->key, val, NULL, flags,
+		                           has_bbox ? bbox : NULL) != 0) {
 			scribe_entry_free(out);
 			return -1;
 		}

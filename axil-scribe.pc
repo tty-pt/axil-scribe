@@ -1,0 +1,11 @@
+prefix=/usr/local
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: axil-scribe
+Description: Axil HTTP service module for handwritten and archival document OCR & HITL verification
+Version: 0.1.0
+Requires: scribe
+Libs: -L${libdir} -laxil-scribe
+Cflags: -I${includedir}
