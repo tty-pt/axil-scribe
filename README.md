@@ -90,7 +90,7 @@ Requires `axil-auren` running on `127.0.0.1:4242` with `fast`, `very-fast`, and 
 ```sh
 ./scripts/scribe-server --handwriting-demo
 ```
-Downloads 5 public-domain Portuguese handwritten parish registers to `/tmp/axil-scribe-handwriting-demo/samples/` and launches with `packs/pt-archival-handwriting`, `SCRIBE_MODEL=fast`, `SCRIBE_MODEL2=very-fast`, `SCRIBE_ESCALATE_MODEL=smart`, and `SCRIBE_ENHANCE=1`. Upload one of the `.png` scans under **Baptism Register (Assento de Baptismo)** (`baptism_starter`) to test live multi-pass extraction, zoomed-crop arbitration, and **Deep Paleography** (`POST /entries/:id/reextract?deep=1`).
+Downloads 5 public-domain Portuguese handwritten parish registers to `/tmp/axil-scribe-handwriting-demo/samples/` and launches with `packs/pt-archival-handwriting`, `SCRIBE_MODEL=fast`, `SCRIBE_MODEL2=very-fast`, `SCRIBE_ESCALATE_MODEL=smart`, and `SCRIBE_ENHANCE=1`. Upload one of the `.png` scans under **Baptism Register (Assento de Baptismo)** (`baptism_starter`) to test live multi-pass extraction, zoomed-crop arbitration, and **Deep Paleography** (`POST /entries/:id/extract?deep=1`).
 
 ### 5. CLI Benchmarks (`scribe-bench`)
 
@@ -112,7 +112,8 @@ SCRIBE_DATA_DIR=/tmp/scribe-custom ./scripts/scribe-server --pack /path/to/my-pa
 
 ## Documentation
 
-- Detailed CLI flags, environment variables, HTTP API, custom templates, and Domain Pack schema: **[docs/USAGE.md](docs/USAGE.md)**
+- Detailed CLI flags, environment variables, HTTP API, custom templates, OS services (`services/`), and Domain Pack schema: **[docs/USAGE.md](docs/USAGE.md)**
+- Node.js / ESM client SDK & pack locators (`@tty-pt/scribe`): **[npm/README.md](npm/README.md)**
 - Architecture & roadmap: **[ROADMAP.md](ROADMAP.md)**
 
 ## License

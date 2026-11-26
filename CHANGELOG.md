@@ -2,6 +2,20 @@
 
 All notable changes to `axil-scribe` are documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Declarative Domain Packs & Extended Template Schema (`include/ttypt/scribe.h`, `src/scribe_template.c`, `src/scribe_validate.c`, `packs/`)**:
+  - Added `scribe_pack_t` (`scribe_pack_load_json()`, `scribe_pack_load_file()`, `scribe_pack_load_dir()`, `scribe_pack_free()`) supporting pack-driven VLM persona, extraction guide, uncertainty markers, preprocessing presets (`none`, `handwriting`, `document`), transcript-first output, default date year bounds, and UI label overrides (`b08c4f0`).
+  - Added field types (`SCRIBE_FIELD_NUMBER`, `SCRIBE_FIELD_CURRENCY`, `SCRIBE_FIELD_CODE`, `SCRIBE_FIELD_ENUM`), `dict_category`, `format_hint`, `enum_values`, and declarative cross-field constraints (`SCRIBE_CONSTRAINT_DATE_LE`, `SCRIBE_CONSTRAINT_NUM_LE`, `SCRIBE_CONSTRAINT_DATE_RANGE`) validated via `scribe_validate_entry_ex()` and `scribe_validate_date_range()` (`b08c4f0`).
+  - Added bundled domain packs: `packs/generic/` (`generic_record.json`, `invoice_starter.json`) and `packs/pt-archival-handwriting/` (`baptism_starter.json`, `confirmation_starter.json`, `wedding_starter.json`, `dictionaries/pt_ecclesiastical.tsv`) (`b08c4f0`).
+- **Multi-Image Preprocessing, Diplomatic Transcripts & Zoomed-Crop Arbitration (`src/scribe_extract.c`, `src/scribe_store.c`, `src/libaxil-scribe.c`, `ux/scribe_ux.c`)**:
+  - Added `scribe_extract_page_ex()`, `scribe_extract_opts_t`, multi-image `extract_json_multi`, non-destructive ephemeral preprocessing (`scribe_prepare_ocr_image_preset()`, `scribe_crop_ocr_region()`), competing `alt_value` preservation on conflicts, full-page diplomatic `transcript` persistence, uncertainty marker detection (`scribe_has_uncertain_marker_ex()`), and zoomed-crop escalation / deep re-extraction (`POST /entries/:id/extract?deep=1`) (`b08c4f0`).
+  - Wired pack-driven UI vocabulary, enum `<datalist>` dropdowns (`fN_enums` in `include/ttypt/scribe-ux.h` and `ux/scribe_ux.c`), automatic pack dictionary loading, CSV `transcript` column export, and template-driven date year hints (`b08c4f0`, `bde3de8`).
+- **Real Handwriting Benchmark, Launcher, NPM Pack Helpers & OS Services (`tests/fetch_real_handwriting.py`, `src/scribe-bench.c`, `scripts/scribe-server`, `npm/`, `services/`, `README.md`, `docs/USAGE.md`)**:
+  - Added `tests/fetch_real_handwriting.py` (5 SHA-256-verified public-domain 1786–1894 Portuguese handwritten parish registers + ground-truth fixtures), `make bench-handwriting`, and `scripts/scribe-server --pack <name|dir>` / `--handwriting-demo` with `SCRIBE_PACK_DIR`, `SCRIBE_MODEL2`, `SCRIBE_ESCALATE_MODEL`, `SCRIBE_ENHANCE`, and 180s default VLM timeout (`b08c4f0`).
+  - Added `getPacksDir()`, `getPackDir()`, `alt_value`/`transcript` TypeScript fields, and `extractEntry(id, { deep })` to `@tty-pt/scribe`, updated all cross-OS service definitions under `services/`, expanded `tests/test_scribe_{core,extract,ux}.c` and dual-pack `test.sh`, and documented automated, browser demo, benchmark, and custom pack testing in `README.md` and `docs/USAGE.md` (`b08c4f0`, `bde3de8`, `541d822`).
+
 ## [0.1.0] - 2026-04-19
 
 ### Added
